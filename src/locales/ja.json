@@ -152,7 +152,11 @@
     "sort": {
       "default": "デフォルト",
       "overall": "総合クォータ順",
-      "byGroup": "{{group}} クォータ順"
+      "byGroup": "{{group}} クォータ順",
+      "createdAt": "作成日時順",
+      "descTooltip": "降順（クリックで昇順へ）",
+      "ascTooltip": "昇順（クリックで降順へ）",
+      "toggleDirection": "並べ替え順序を切り替え"
     },
     "actions": {
       "viewDetails": "詳細を見る",

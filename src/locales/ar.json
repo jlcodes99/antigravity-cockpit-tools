@@ -152,7 +152,11 @@
     "sort": {
       "default": "افتراضي",
       "overall": "حسب الكوتا الإجمالية",
-      "byGroup": "حسب كوتا {{group}}"
+      "byGroup": "حسب كوتا {{group}}",
+      "createdAt": "حسب وقت الإنشاء",
+      "descTooltip": "تنازلي، انقر للتبديل إلى تصاعدي",
+      "ascTooltip": "تصاعدي، انقر للتبديل إلى تنازلي",
+      "toggleDirection": "تبديل اتجاه الترتيب"
     },
     "actions": {
       "viewDetails": "عرض التفاصيل",

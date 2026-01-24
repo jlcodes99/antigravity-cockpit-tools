@@ -152,7 +152,11 @@
     "sort": {
       "default": "Výchozí",
       "overall": "Podle celkové kvóty",
-      "byGroup": "Podle kvóty {{group}}"
+      "byGroup": "Podle kvóty {{group}}",
+      "createdAt": "Podle data vytvoření",
+      "descTooltip": "Sestupně, kliknutím přepnete na vzestupně",
+      "ascTooltip": "Vzestupně, kliknutím přepnete na sestupně",
+      "toggleDirection": "Přepnout směr řazení"
     },
     "actions": {
       "viewDetails": "Zobrazit detaily",

@@ -152,7 +152,11 @@
     "sort": {
       "default": "Varsayılan",
       "overall": "Toplam kotaya göre",
-      "byGroup": "{{group}} kotasına göre"
+      "byGroup": "{{group}} kotasına göre",
+      "createdAt": "Oluşturma zamanına göre",
+      "descTooltip": "Azalan, Artan için tıkla",
+      "ascTooltip": "Artan, Azalan için tıkla",
+      "toggleDirection": "Yönü değiştir"
     },
     "actions": {
       "viewDetails": "Detayları görüntüle",

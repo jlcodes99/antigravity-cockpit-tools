@@ -152,7 +152,11 @@
     "sort": {
       "default": "Predefinito",
       "overall": "Per quota complessiva",
-      "byGroup": "Per quota di {{group}}"
+      "byGroup": "Per quota di {{group}}",
+      "createdAt": "Per data di creazione",
+      "descTooltip": "Decrescente, clicca per Ascendente",
+      "ascTooltip": "Ascendente, clicca per Decrescente",
+      "toggleDirection": "Inverti ordine"
     },
     "actions": {
       "viewDetails": "Vedi dettagli",

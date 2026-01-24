@@ -152,7 +152,11 @@
     "sort": {
       "default": "Domyślne",
       "overall": "Według ogólnego limitu",
-      "byGroup": "Według limitu {{group}}"
+      "byGroup": "Według limitu {{group}}",
+      "createdAt": "Według daty utworzenia",
+      "descTooltip": "Malejąco, kliknij dla rosnąco",
+      "ascTooltip": "Rosnąco, kliknij dla malejąco",
+      "toggleDirection": "Zmień kierunek"
     },
     "actions": {
       "viewDetails": "Pokaż szczegóły",

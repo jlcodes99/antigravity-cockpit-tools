@@ -152,7 +152,11 @@
     "sort": {
       "default": "默认排序",
       "overall": "按综合配额",
-      "byGroup": "按 {{group}} 配额"
+      "createdAt": "按创建时间",
+      "byGroup": "按 {{group}} 配额",
+      "descTooltip": "当前：降序，点击切换为升序",
+      "ascTooltip": "当前：升序，点击切换为降序",
+      "toggleDirection": "切换排序方向"
     },
     "actions": {
       "viewDetails": "查看详情",

@@ -152,7 +152,11 @@
     "sort": {
       "default": "Predeterminado",
       "overall": "Por cuota general",
-      "byGroup": "Por cuota de {{group}}"
+      "byGroup": "Por cuota de {{group}}",
+      "createdAt": "Por fecha de creación",
+      "descTooltip": "Descendente, clic para Ascendente",
+      "ascTooltip": "Ascendente, clic para Descendente",
+      "toggleDirection": "Alternar dirección"
     },
     "actions": {
       "viewDetails": "Ver detalles",

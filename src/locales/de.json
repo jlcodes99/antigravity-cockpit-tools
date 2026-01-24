@@ -152,7 +152,11 @@
     "sort": {
       "default": "Standard",
       "overall": "Nach Gesamtkontingent",
-      "byGroup": "Nach Kontingent von {{group}}"
+      "byGroup": "Nach Kontingent von {{group}}",
+      "createdAt": "Nach Erstellungszeit",
+      "descTooltip": "Absteigend, klicken für Aufsteigend",
+      "ascTooltip": "Aufsteigend, klicken für Absteigend",
+      "toggleDirection": "Sortierrichtung umschalten"
     },
     "actions": {
       "viewDetails": "Details anzeigen",

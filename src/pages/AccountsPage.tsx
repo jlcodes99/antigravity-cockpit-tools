@@ -91,7 +91,8 @@ export function AccountsPage({ onNavigate }: AccountsPageProps) {
   // 分组管理
   const [showGroupModal, setShowGroupModal] = useState(false);
   const [displayGroups, setDisplayGroups] = useState<DisplayGroup[]>([]);
-  const [sortBy, setSortBy] = useState<'overall' | string>('overall');
+  const [sortBy, setSortBy] = useState<'overall' | 'created_at' | string>('overall');
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
   
   const showAddModalRef = useRef(showAddModal);
   const addTabRef = useRef(addTab);
@@ -148,8 +149,14 @@ export function AccountsPage({ onNavigate }: AccountsPageProps) {
     }
     
     // 排序逻辑
-    if (sortBy !== 'default' && sortBy !== 'overall' && displayGroups.length > 0) {
-      // 按指定分组配额排序（从大到小），相同配额按总配额再排序
+    if (sortBy === 'created_at') {
+      // 按创建时间排序
+      result.sort((a, b) => {
+        const diff = b.created_at - a.created_at;
+        return sortDirection === 'desc' ? diff : -diff;
+      });
+    } else if (sortBy !== 'default' && sortBy !== 'overall' && displayGroups.length > 0) {
+      // 按指定分组配额排序，相同配额按总配额再排序
       const groupSettings: GroupSettings = {
         groupMappings: {},
         groupNames: {},
@@ -171,25 +178,28 @@ export function AccountsPage({ onNavigate }: AccountsPageProps) {
         
         // 如果分组配额不同，按分组配额排序
         if (aGroupQuota !== bGroupQuota) {
-          return bGroupQuota - aGroupQuota;
+          const diff = bGroupQuota - aGroupQuota;
+          return sortDirection === 'desc' ? diff : -diff;
         }
         
         // 分组配额相同，按总配额排序
         const aOverall = calculateOverallQuota(getAccountQuotas(a));
         const bOverall = calculateOverallQuota(getAccountQuotas(b));
-        return bOverall - aOverall;
+        const diff = bOverall - aOverall;
+        return sortDirection === 'desc' ? diff : -diff;
       });
     } else {
-      // 默认按综合配额排序（从大到小）
+      // 默认按综合配额排序
       result.sort((a, b) => {
         const aQuota = calculateOverallQuota(getAccountQuotas(a));
         const bQuota = calculateOverallQuota(getAccountQuotas(b));
-        return bQuota - aQuota;
+        const diff = bQuota - aQuota;
+        return sortDirection === 'desc' ? diff : -diff;
       });
     }
     
     return result;
-  }, [accounts, searchQuery, filterType, currentAccount, sortBy, displayGroups]);
+  }, [accounts, searchQuery, filterType, currentAccount, sortBy, sortDirection, displayGroups]);
 
   // 统计数量
   const tierCounts = useMemo(() => {
@@ -726,7 +736,7 @@ export function AccountsPage({ onNavigate }: AccountsPageProps) {
 
             {/* 卡片底部 - 日期和操作 */}
             <div className="card-footer">
-              <span className="card-date">{formatDate(account.last_used)}</span>
+              <span className="card-date">{formatDate(account.created_at)}</span>
               <div className="card-actions">
                 <button className="card-action-btn" onClick={() => setShowQuotaModal(account.id)} title={t('accounts.actions.viewDetails')}>
                   <CircleAlert size={14} />
@@ -953,6 +963,7 @@ export function AccountsPage({ onNavigate }: AccountsPageProps) {
                 aria-label={t('accounts.sortLabel', '排序')}
               >
                 <option value="overall">{t('accounts.sort.overall', '按综合配额')}</option>
+                <option value="created_at">{t('accounts.sort.createdAt', '按创建时间')}</option>
                 {displayGroups.map(group => (
                   <option key={group.id} value={group.id}>
                     {t('accounts.sort.byGroup', { group: group.name, defaultValue: `按 ${group.name} 配额` })}
@@ -960,6 +971,16 @@ export function AccountsPage({ onNavigate }: AccountsPageProps) {
                 ))}
               </select>
             </div>
+            
+            {/* 排序方向切换按钮 */}
+            <button
+              className="sort-direction-btn"
+              onClick={() => setSortDirection(prev => prev === 'desc' ? 'asc' : 'desc')}
+              title={sortDirection === 'desc' ? t('accounts.sort.descTooltip', '当前：降序，点击切换为升序') : t('accounts.sort.ascTooltip', '当前：升序，点击切换为降序')}
+              aria-label={t('accounts.sort.toggleDirection', '切换排序方向')}
+            >
+              {sortDirection === 'desc' ? '⬇' : '⬆'}
+            </button>
           </div>
 
           <div className="toolbar-right">

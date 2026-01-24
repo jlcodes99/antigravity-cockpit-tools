@@ -4064,6 +4064,36 @@ html[data-theme="dark"] body {
   pointer-events: none;
 }
 
+/* Sort Direction Toggle Button */
+.accounts-page .sort-direction-btn {
+  width: 32px;
+  height: 32px;
+  margin-left: 6px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+  font-size: 16px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.accounts-page .sort-direction-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+  border-color: var(--border-hover);
+  transform: scale(1.05);
+}
+
+.accounts-page .sort-direction-btn:active {
+  transform: scale(0.95);
+}
+
+
 .accounts-page .filter-tab.active {
   background: var(--gradient-primary);
   color: white;

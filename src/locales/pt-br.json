@@ -152,7 +152,11 @@
     "sort": {
       "default": "Padrão",
       "overall": "Por cota total",
-      "byGroup": "Por cota de {{group}}"
+      "byGroup": "Por cota de {{group}}",
+      "createdAt": "Por data de criação",
+      "descTooltip": "Decrescente, clique para Ascendente",
+      "ascTooltip": "Ascendente, clique para Decrescente",
+      "toggleDirection": "Alternar direção"
     },
     "actions": {
       "viewDetails": "Ver detalhes",

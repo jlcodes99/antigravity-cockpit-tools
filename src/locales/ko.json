@@ -152,7 +152,11 @@
     "sort": {
       "default": "기본값",
       "overall": "전체 할당량순",
-      "byGroup": "{{group}} 할당량순"
+      "byGroup": "{{group}} 할당량순",
+      "createdAt": "생성 시간순",
+      "descTooltip": "내림차순, 오름차순으로 전환 클릭",
+      "ascTooltip": "오름차순, 내림차순으로 전환 클릭",
+      "toggleDirection": "정렬 방향 전환"
     },
     "actions": {
       "viewDetails": "상세 보기",

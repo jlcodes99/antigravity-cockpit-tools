@@ -97,7 +97,7 @@ pub fn write_service_machine_id(service_machine_id: &str) -> Result<(), String> 
 
     conn.execute(
         "INSERT OR REPLACE INTO ItemTable (key, value) VALUES (?, ?)",
-        ["telemetry.serviceMachineId", service_machine_id],
+        ["storage.serviceMachineId", service_machine_id],
     )
     .map_err(|e| format!("写入 serviceMachineId 失败: {}", e))?;
 

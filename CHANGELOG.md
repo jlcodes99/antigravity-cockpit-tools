@@ -8,6 +8,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [0.3.3] - 2026-01-24
+
+### Added
+- **Account Management**: Added sorting by creation time. Accounts are now sorted by creation time (descending) by default.
+- **Database**: Added `created_at` field to the `accounts` table for precise account tracking.
+- **i18n**: Added "Creation Time" related translations for all 17 supported languages.
+
 ## [0.3.2] - 2026-01-23
 
 ### Added

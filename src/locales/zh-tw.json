@@ -152,7 +152,11 @@
     "sort": {
       "default": "默認排序",
       "overall": "按綜合配額",
-      "byGroup": "按 {{group}} 配額"
+      "byGroup": "按 {{group}} 配額",
+      "createdAt": "按創建時間",
+      "descTooltip": "當前：降序，點擊切換為昇序",
+      "ascTooltip": "當前：昇序，點擊切換為降序",
+      "toggleDirection": "切換排序方向"
     },
     "actions": {
       "viewDetails": "查看詳情",

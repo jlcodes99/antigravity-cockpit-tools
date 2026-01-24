@@ -152,7 +152,11 @@
     "sort": {
       "default": "Mặc định",
       "overall": "Theo tổng hạn mức",
-      "byGroup": "Theo hạn mức {{group}}"
+      "byGroup": "Theo hạn mức {{group}}",
+      "createdAt": "Theo thời gian tạo",
+      "descTooltip": "Giảm dần, nhấn để chuyển Tăng dần",
+      "ascTooltip": "Tăng dần, nhấn để chuyển Giảm dần",
+      "toggleDirection": "Đổi hướng sắp xếp"
     },
     "actions": {
       "viewDetails": "Xem chi tiết",

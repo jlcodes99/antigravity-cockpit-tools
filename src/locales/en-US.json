@@ -152,7 +152,11 @@
     "sort": {
       "default": "Default",
       "overall": "By overall quota",
-      "byGroup": "By {{group}} quota"
+      "createdAt": "By creation time",
+      "byGroup": "By {{group}} quota",
+      "descTooltip": "Desc, click to switch to Asc",
+      "ascTooltip": "Asc, click to switch to Desc",
+      "toggleDirection": "Toggle sort direction"
     },
     "actions": {
       "viewDetails": "View details",

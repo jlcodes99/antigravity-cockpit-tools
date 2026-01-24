@@ -137,6 +137,9 @@ pub fn add_account(email: String, name: Option<String>, token: TokenData) -> Res
     let account_id = Uuid::new_v4().to_string();
     let mut account = Account::new(account_id.clone(), email.clone(), token);
     account.name = name.clone();
+
+    let fingerprint = crate::modules::fingerprint::generate_fingerprint(email.clone())?;
+    account.fingerprint_id = Some(fingerprint.id.clone());
     
     save_account(&account)?;
     
@@ -190,6 +193,8 @@ pub fn upsert_account(email: String, name: Option<String>, token: TokenData) -> 
                 modules::logger::log_warn(&format!("Account {} file missing ({}), recreating...", account_id, e));
                 let mut account = Account::new(account_id.clone(), email.clone(), token);
                 account.name = name.clone();
+                let fingerprint = crate::modules::fingerprint::generate_fingerprint(email.clone())?;
+                account.fingerprint_id = Some(fingerprint.id.clone());
                 save_account(&account)?;
                 
                 if let Some(idx_summary) = index.accounts.iter_mut().find(|s| s.id == account_id) {
