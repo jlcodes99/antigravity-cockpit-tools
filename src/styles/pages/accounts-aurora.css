@@ -213,6 +213,160 @@
   pointer-events: none;
 }
 
+.accounts-page .tag-filter {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.accounts-page .tag-filter-btn {
+  height: 32px;
+  padding: 0 12px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+}
+
+.accounts-page .tag-filter-btn.active {
+  border-color: rgba(59, 130, 246, 0.4);
+  background: linear-gradient(135deg, rgba(191, 219, 254, 0.45), rgba(153, 246, 228, 0.4));
+  color: #0f172a;
+}
+
+.accounts-page .tag-filter-panel {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  min-width: 220px;
+  background: var(--bg-secondary);
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  border-radius: 12px;
+  box-shadow: 0 16px 30px rgba(15, 23, 42, 0.16);
+  padding: 10px;
+  z-index: 20;
+}
+
+.accounts-page .tag-filter-divider {
+  height: 1px;
+  background: rgba(148, 163, 184, 0.25);
+  margin: 4px 0;
+}
+
+.accounts-page .tag-filter-group-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.accounts-page .tag-filter-group-toggle input {
+  width: 14px;
+  height: 14px;
+  accent-color: var(--accounts-primary);
+}
+
+.accounts-page .tag-filter-options {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 220px;
+  overflow: auto;
+  padding-right: 4px;
+}
+
+.accounts-page .tag-filter-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  padding: 6px 8px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.accounts-page .tag-filter-option input {
+  width: 14px;
+  height: 14px;
+  accent-color: var(--accounts-primary);
+}
+
+.accounts-page .tag-filter-option.selected {
+  background: rgba(14, 165, 233, 0.12);
+  color: var(--text-primary);
+}
+
+.accounts-page .tag-filter-empty {
+  font-size: 12px;
+  color: var(--text-muted);
+  padding: 6px 4px;
+}
+
+.accounts-page .tag-filter-clear {
+  margin-top: 10px;
+  width: 100%;
+  border: none;
+  background: rgba(15, 23, 42, 0.06);
+  color: var(--text-secondary);
+  font-size: 12px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.accounts-page .tag-filter-clear:hover {
+  background: rgba(15, 23, 42, 0.12);
+  color: var(--text-primary);
+}
+
+.accounts-page .tag-group-list {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.accounts-page .tag-group-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 10px;
+  border-radius: 10px;
+  background: rgba(15, 23, 42, 0.04);
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.accounts-page .tag-group-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.accounts-page .tag-group-count {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.accounts-page .tag-group-grid {
+  margin-top: 12px;
+}
+
+.accounts-page .tag-group-row td {
+  padding: 8px 16px;
+  background: rgba(15, 23, 42, 0.04);
+  border-bottom: 1px solid rgba(148, 163, 184, 0.2);
+}
+
 /* Sort Select */
 .accounts-page .sort-select {
   position: relative;

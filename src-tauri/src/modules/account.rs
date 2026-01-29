@@ -3,6 +3,7 @@ use std::path::PathBuf;
 use uuid::Uuid;
 use serde::Serialize;
 use std::sync::Mutex;
+use std::collections::HashSet;
 
 use crate::models::{Account, AccountIndex, AccountSummary, TokenData, QuotaData, DeviceProfile, DeviceProfileVersion};
 use crate::modules;
@@ -102,6 +103,40 @@ pub fn save_account(account: &Account) -> Result<(), String> {
     
     fs::write(&account_path, content)
         .map_err(|e| format!("保存账号数据失败: {}", e))
+}
+
+fn normalize_tags(tags: Vec<String>) -> Result<Vec<String>, String> {
+    let mut result: Vec<String> = Vec::new();
+    let mut seen: HashSet<String> = HashSet::new();
+
+    for raw in tags {
+        let trimmed = raw.trim();
+        if trimmed.is_empty() {
+            return Err("标签不能为空".to_string());
+        }
+        if trimmed.chars().count() > 20 {
+            return Err("标签长度不能超过 20 个字符".to_string());
+        }
+        let normalized = trimmed.to_lowercase();
+        if seen.insert(normalized.clone()) {
+            result.push(normalized);
+        }
+    }
+
+    if result.len() > 10 {
+        return Err("标签数量不能超过 10 个".to_string());
+    }
+
+    Ok(result)
+}
+
+/// 更新账号标签
+pub fn update_account_tags(account_id: &str, tags: Vec<String>) -> Result<Account, String> {
+    let mut account = load_account(account_id)?;
+    let normalized = normalize_tags(tags)?;
+    account.tags = normalized;
+    save_account(&account)?;
+    Ok(account)
 }
 
 /// 列出所有账号

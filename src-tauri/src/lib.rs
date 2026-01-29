@@ -111,6 +111,7 @@ pub fn run() {
             commands::account::switch_account,
             commands::account::bind_account_fingerprint,
             commands::account::get_bound_accounts,
+            commands::account::update_account_tags,
             commands::account::sync_current_from_client,
             commands::account::sync_from_extension,
             
@@ -200,6 +201,7 @@ pub fn run() {
             commands::codex::add_codex_account_with_token,
             commands::codex::is_codex_oauth_port_in_use,
             commands::codex::close_codex_oauth_port,
+            commands::codex::update_codex_account_tags,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application");

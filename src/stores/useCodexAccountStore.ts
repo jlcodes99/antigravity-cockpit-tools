@@ -18,6 +18,7 @@ interface CodexAccountState {
   refreshAllQuotas: () => Promise<void>;
   importFromLocal: () => Promise<CodexAccount>;
   importFromJson: (jsonContent: string) => Promise<CodexAccount[]>;
+  updateAccountTags: (accountId: string, tags: string[]) => Promise<CodexAccount>;
 }
 
 export const useCodexAccountStore = create<CodexAccountState>((set, get) => ({
@@ -84,5 +85,11 @@ export const useCodexAccountStore = create<CodexAccountState>((set, get) => ({
     const accounts = await codexService.importCodexFromJson(jsonContent);
     await get().fetchAccounts();
     return accounts;
+  },
+
+  updateAccountTags: async (accountId: string, tags: string[]) => {
+    const account = await codexService.updateCodexAccountTags(accountId, tags);
+    await get().fetchAccounts();
+    return account;
   },
 }));

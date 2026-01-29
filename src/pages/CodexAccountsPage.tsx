@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import { useState, useEffect, useRef, useMemo, useCallback, Fragment } from 'react';
 import {
   Plus,
   RefreshCw,
@@ -13,21 +13,25 @@ import {
   Check,
   Play,
   RotateCw,
+  CircleAlert,
   LayoutGrid,
   List,
   Search,
   ArrowDownWideNarrow,
   Clock,
   Calendar,
+  Tag,
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useCodexAccountStore } from '../stores/useCodexAccountStore';
 import * as codexService from '../services/codexService';
+import { TagEditModal } from '../components/TagEditModal';
 import {
   getCodexPlanDisplayName,
   getCodexQuotaClass,
   formatCodexResetTime,
 } from '../types/codex';
+
 import { listen, UnlistenFn } from '@tauri-apps/api/event';
 import { confirm as confirmDialog } from '@tauri-apps/plugin-dialog';
 import { save } from '@tauri-apps/plugin-dialog';
@@ -37,6 +41,7 @@ import { invoke } from '@tauri-apps/api/core';
 export function CodexAccountsPage() {
   const { t, i18n } = useTranslation();
   const locale = i18n.language || 'zh-CN';
+  const untaggedKey = '__untagged__';
 
   const {
     accounts,
@@ -48,6 +53,7 @@ export function CodexAccountsPage() {
     refreshQuota,
     refreshAllQuotas,
     switchAccount,
+    updateAccountTags,
   } = useCodexAccountStore();
 
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -58,19 +64,23 @@ export function CodexAccountsPage() {
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [searchQuery, setSearchQuery] = useState('');
   const [filterType, setFilterType] = useState<'all' | 'FREE' | 'PLUS' | 'PRO' | 'TEAM' | 'ENTERPRISE'>('all');
+  const [tagFilter, setTagFilter] = useState<string[]>([]);
+  const [groupByTag, setGroupByTag] = useState(false);
+  const [showTagFilter, setShowTagFilter] = useState(false);
+  const [showTagModal, setShowTagModal] = useState<string | null>(null);
   const [sortBy, setSortBy] = useState<'weekly' | 'hourly' | 'created_at' | 'weekly_reset' | 'hourly_reset'>('created_at');
-  const [sortDirection, setSortDirection] = useState<'desc' | 'asc'>('asc');
-  const [switching, setSwitching] = useState<string | null>(null);
-  const [importing, setImporting] = useState(false);
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
   const [exporting, setExporting] = useState(false);
-  const [message, setMessage] = useState<{ text: string; tone?: 'error' } | null>(null);
+  const [addMessage, setAddMessage] = useState<string | null>(null);
   const [addStatus, setAddStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
-  const [addMessage, setAddMessage] = useState('');
-  const [oauthUrl, setOauthUrl] = useState('');
+  const [oauthUrl, setOauthUrl] = useState<string | null>(null);
   const [oauthUrlCopied, setOauthUrlCopied] = useState(false);
   const [oauthPrepareError, setOauthPrepareError] = useState<string | null>(null);
   const [oauthPortInUse, setOauthPortInUse] = useState<number | null>(null);
   const [tokenInput, setTokenInput] = useState('');
+  const [importing, setImporting] = useState(false);
+  const [switching, setSwitching] = useState<string | null>(null);
+  const [message, setMessage] = useState<{ text: string; tone?: 'error' } | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<{ ids: string[]; message: string } | null>(null);
   const [deleting, setDeleting] = useState(false);
 
@@ -78,6 +88,7 @@ export function CodexAccountsPage() {
   const addTabRef = useRef(addTab);
   const addStatusRef = useRef(addStatus);
   const oauthActiveRef = useRef(false);
+  const tagFilterRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     showAddModalRef.current = showAddModal;
@@ -86,11 +97,22 @@ export function CodexAccountsPage() {
   }, [showAddModal, addTab, addStatus]);
 
   useEffect(() => {
+    if (!showTagFilter) return;
+    const handleClick = (event: MouseEvent) => {
+      if (!tagFilterRef.current) return;
+      if (!tagFilterRef.current.contains(event.target as Node)) {
+        setShowTagFilter(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, [showTagFilter]);
+
+  useEffect(() => {
     fetchAccounts();
     fetchCurrentAccount();
   }, [fetchAccounts, fetchCurrentAccount]);
 
-  // 监听 OAuth 回调
   useEffect(() => {
     let unlisten: UnlistenFn | undefined;
 
@@ -157,13 +179,11 @@ export function CodexAccountsPage() {
       });
   }, [t]);
 
-  // 准备 OAuth URL
   useEffect(() => {
     if (!showAddModal || addTab !== 'oauth' || oauthUrl) return;
     prepareOauthUrl();
   }, [showAddModal, addTab, oauthUrl, prepareOauthUrl]);
 
-  // 关闭弹窗时取消 OAuth
   useEffect(() => {
     if (showAddModal && addTab === 'oauth') return;
     if (!oauthActiveRef.current) return;
@@ -265,7 +285,6 @@ export function CodexAccountsPage() {
       const account = await codexService.importCodexFromLocal();
       await fetchAccounts();
       
-      // 配额刷新失败不影响导入结果
       try {
         await refreshQuota(account.id);
         await fetchAccounts();
@@ -300,7 +319,6 @@ export function CodexAccountsPage() {
     setAddMessage(t('codex.token.importing', '正在导入...'));
 
     try {
-      // 尝试作为 JSON 导入
       const accounts = await codexService.importCodexFromJson(trimmed);
       await fetchAccounts();
       for (const acc of accounts) {
@@ -364,7 +382,6 @@ export function CodexAccountsPage() {
       await openUrl(oauthUrl);
     } catch (e) {
       console.error('打开浏览器失败:', e);
-      // 回退方案：复制到剪贴板
       await navigator.clipboard.writeText(oauthUrl).catch(() => {});
       setOauthUrlCopied(true);
       setTimeout(() => setOauthUrlCopied(false), 1200);
@@ -397,6 +414,15 @@ export function CodexAccountsPage() {
     setExporting(false);
   };
 
+  const formatDate = (timestamp: number) => {
+    const d = new Date(timestamp * 1000);
+    return (
+      d.toLocaleDateString(locale, { year: 'numeric', month: '2-digit', day: '2-digit' }) +
+      ' ' +
+      d.toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' })
+    );
+  };
+
   const toggleSelect = (id: string) => {
     const next = new Set(selected);
     if (next.has(id)) next.delete(id);
@@ -411,6 +437,19 @@ export function CodexAccountsPage() {
   };
 
   const normalizePlan = (planType?: string) => getCodexPlanDisplayName(planType);
+
+  const normalizeTag = (tag: string) => tag.trim().toLowerCase();
+
+  const availableTags = useMemo(() => {
+    const set = new Set<string>();
+    accounts.forEach((account) => {
+      (account.tags || []).forEach((tag) => {
+        const normalized = normalizeTag(tag);
+        if (normalized) set.add(normalized);
+      });
+    });
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [accounts]);
 
   const tierCounts = useMemo(() => {
     const counts = {
@@ -442,6 +481,14 @@ export function CodexAccountsPage() {
       result = result.filter((account) => normalizePlan(account.plan_type) === filterType);
     }
 
+    if (tagFilter.length > 0) {
+      const selectedTags = new Set(tagFilter.map(normalizeTag));
+      result = result.filter((acc) => {
+        const tags = (acc.tags || []).map(normalizeTag);
+        return tags.some((tag) => selectedTags.has(tag));
+      });
+    }
+
     result.sort((a, b) => {
       if (sortBy === 'created_at') {
         const diff = b.created_at - a.created_at;
@@ -471,25 +518,298 @@ export function CodexAccountsPage() {
     });
 
     return result;
-  }, [accounts, filterType, searchQuery, sortBy, sortDirection]);
+  }, [accounts, filterType, searchQuery, sortBy, sortDirection, tagFilter]);
 
-  const formatDate = (timestamp: number) => {
-    const d = new Date(timestamp * 1000);
-    return (
-      d.toLocaleDateString(locale, { year: 'numeric', month: '2-digit', day: '2-digit' }) +
-      ' ' +
-      d.toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' })
-    );
+  const groupedAccounts = useMemo(() => {
+    if (!groupByTag) return [] as Array<[string, typeof filteredAccounts]>;
+    const groups = new Map<string, typeof filteredAccounts>();
+    const selectedTags = new Set(tagFilter.map(normalizeTag));
+
+    filteredAccounts.forEach((account) => {
+      const tags = (account.tags || []).map(normalizeTag).filter(Boolean);
+      const matchedTags = selectedTags.size > 0
+        ? tags.filter((tag) => selectedTags.has(tag))
+        : tags;
+
+      if (matchedTags.length === 0) {
+        if (!groups.has(untaggedKey)) groups.set(untaggedKey, []);
+        groups.get(untaggedKey)?.push(account);
+        return;
+      }
+
+      matchedTags.forEach((tag) => {
+        if (!groups.has(tag)) groups.set(tag, []);
+        groups.get(tag)?.push(account);
+      });
+    });
+
+    return Array.from(groups.entries()).sort(([aKey], [bKey]) => {
+      if (aKey === untaggedKey) return 1;
+      if (bKey === untaggedKey) return -1;
+      return aKey.localeCompare(bKey);
+    });
+  }, [filteredAccounts, groupByTag, tagFilter, untaggedKey]);
+
+  const toggleTagFilterValue = (tag: string) => {
+    setTagFilter((prev) => {
+      if (prev.includes(tag)) return prev.filter((item) => item !== tag);
+      return [...prev, tag];
+    });
   };
+
+  const clearTagFilter = () => {
+    setTagFilter([]);
+  };
+
+  const openTagModal = (accountId: string) => {
+    setShowTagModal(accountId);
+  };
+
+  const handleSaveTags = async (tags: string[]) => {
+    if (!showTagModal) return;
+    await updateAccountTags(showTagModal, tags);
+    setShowTagModal(null);
+  };
+
+  const resolveGroupLabel = (groupKey: string) =>
+    groupKey === untaggedKey ? t('accounts.defaultGroup', '默认分组') : groupKey;
+
+  const renderGridCards = (items: typeof filteredAccounts, groupKey?: string) =>
+    items.map((account) => {
+      const isCurrent = currentAccount?.id === account.id;
+      const planKey = getCodexPlanDisplayName(account.plan_type);
+      const planLabel = t(`codex.plan.${planKey.toLowerCase()}`, planKey);
+      const isSelected = selected.has(account.id);
+
+      return (
+        <div
+          key={groupKey ? `${groupKey}-${account.id}` : account.id}
+          className={`codex-account-card ${isCurrent ? 'current' : ''} ${isSelected ? 'selected' : ''}`}
+        >
+          <div className="card-top">
+            <div className="card-select">
+              <input
+                type="checkbox"
+                checked={isSelected}
+                onChange={() => toggleSelect(account.id)}
+              />
+            </div>
+            <span className="account-email" title={account.email}>
+              {account.email}
+            </span>
+            {isCurrent && <span className="current-tag">{t('codex.current', '当前')}</span>}
+            <span className={`tier-badge ${planKey.toLowerCase()}`}>{planLabel}</span>
+          </div>
+
+          <div className="codex-quota-section">
+            <div className="quota-item">
+              <div className="quota-header">
+                <Clock size={14} />
+                <span className="quota-label">{t('codex.quota.hourly', '5小时配额')}</span>
+                <span className={`quota-pct ${getCodexQuotaClass(account.quota?.hourly_percentage ?? 100)}`}>
+                  {account.quota?.hourly_percentage ?? 100}%
+                </span>
+              </div>
+              <div className="quota-bar-track">
+                <div
+                  className={`quota-bar ${getCodexQuotaClass(account.quota?.hourly_percentage ?? 100)}`}
+                  style={{ width: `${account.quota?.hourly_percentage ?? 100}%` }}
+                />
+              </div>
+              {account.quota?.hourly_reset_time && (
+                <span className="quota-reset">
+                  {formatCodexResetTime(account.quota.hourly_reset_time, t)}
+                </span>
+              )}
+            </div>
+
+            <div className="quota-item">
+              <div className="quota-header">
+                <Calendar size={14} />
+                <span className="quota-label">{t('codex.quota.weekly', '周配额')}</span>
+                <span className={`quota-pct ${getCodexQuotaClass(account.quota?.weekly_percentage ?? 100)}`}>
+                  {account.quota?.weekly_percentage ?? 100}%
+                </span>
+              </div>
+              <div className="quota-bar-track">
+                <div
+                  className={`quota-bar ${getCodexQuotaClass(account.quota?.weekly_percentage ?? 100)}`}
+                  style={{ width: `${account.quota?.weekly_percentage ?? 100}%` }}
+                />
+              </div>
+              {account.quota?.weekly_reset_time && (
+                <span className="quota-reset">
+                  {formatCodexResetTime(account.quota.weekly_reset_time, t)}
+                </span>
+              )}
+            </div>
+
+            {!account.quota && (
+              <div className="quota-empty">{t('codex.quota.noData', '暂无配额数据')}</div>
+            )}
+          </div>
+
+          <div className="card-footer">
+            <span className="card-date">{formatDate(account.created_at)}</span>
+            <div className="card-actions">
+              <button
+                className="card-action-btn"
+                onClick={() => openTagModal(account.id)}
+                title={t('accounts.editTags', '编辑标签')}
+              >
+                <Tag size={14} />
+              </button>
+              <button
+                className={`card-action-btn ${!isCurrent ? 'success' : ''}`}
+                onClick={() => handleSwitch(account.id)}
+                disabled={!!switching}
+                title={t('codex.switch', '切换')}
+              >
+                {switching === account.id ? (
+                  <RefreshCw size={14} className="loading-spinner" />
+                ) : (
+                  <Play size={14} />
+                )}
+              </button>
+              <button
+                className="card-action-btn"
+                onClick={() => handleRefresh(account.id)}
+                disabled={refreshing === account.id}
+                title={t('codex.refreshQuota', '刷新配额')}
+              >
+                <RotateCw
+                  size={14}
+                  className={refreshing === account.id ? 'loading-spinner' : ''}
+                />
+              </button>
+              <button
+                className="card-action-btn danger"
+                onClick={() => handleDelete(account.id)}
+                title={t('common.delete', '删除')}
+              >
+                <Trash2 size={14} />
+              </button>
+            </div>
+          </div>
+        </div>
+      );
+    });
+
+  const renderTableRows = (items: typeof filteredAccounts, groupKey?: string) =>
+    items.map((account) => {
+      const isCurrent = currentAccount?.id === account.id;
+      const planKey = getCodexPlanDisplayName(account.plan_type);
+      const planLabel = t(`codex.plan.${planKey.toLowerCase()}`, planKey);
+      return (
+        <tr key={groupKey ? `${groupKey}-${account.id}` : account.id} className={isCurrent ? 'current' : ''}>
+          <td>
+            <input
+              type="checkbox"
+              checked={selected.has(account.id)}
+              onChange={() => toggleSelect(account.id)}
+            />
+          </td>
+          <td>
+            <div className="account-cell">
+              <div className="account-main-line">
+                <span className="account-email-text" title={account.email}>{account.email}</span>
+                {isCurrent && <span className="mini-tag current">{t('codex.current', '当前')}</span>}
+              </div>
+            </div>
+          </td>
+          <td>
+            <span className={`tier-badge ${planKey.toLowerCase()}`}>{planLabel}</span>
+          </td>
+          <td>
+            <div className="quota-item">
+              <div className="quota-header">
+                <span className="quota-name">{t('codex.quota.hourly', '5小时配额')}</span>
+                <span className={`quota-value ${getCodexQuotaClass(account.quota?.hourly_percentage ?? 100)}`}>
+                  {account.quota?.hourly_percentage ?? 100}%
+                </span>
+              </div>
+              <div className="quota-progress-track">
+                <div
+                  className={`quota-progress-bar ${getCodexQuotaClass(account.quota?.hourly_percentage ?? 100)}`}
+                  style={{ width: `${account.quota?.hourly_percentage ?? 100}%` }}
+                />
+              </div>
+              {account.quota?.hourly_reset_time && (
+                <div className="quota-footer">
+                  <span className="quota-reset">
+                    {formatCodexResetTime(account.quota.hourly_reset_time, t)}
+                  </span>
+                </div>
+              )}
+            </div>
+          </td>
+          <td>
+            <div className="quota-item">
+              <div className="quota-header">
+                <span className="quota-name">{t('codex.quota.weekly', '周配额')}</span>
+                <span className={`quota-value ${getCodexQuotaClass(account.quota?.weekly_percentage ?? 100)}`}>
+                  {account.quota?.weekly_percentage ?? 100}%
+                </span>
+              </div>
+              <div className="quota-progress-track">
+                <div
+                  className={`quota-progress-bar ${getCodexQuotaClass(account.quota?.weekly_percentage ?? 100)}`}
+                  style={{ width: `${account.quota?.weekly_percentage ?? 100}%` }}
+                />
+              </div>
+              {account.quota?.weekly_reset_time && (
+                <div className="quota-footer">
+                  <span className="quota-reset">
+                    {formatCodexResetTime(account.quota.weekly_reset_time, t)}
+                  </span>
+                </div>
+              )}
+            </div>
+          </td>
+          <td className="sticky-action-cell table-action-cell">
+            <div className="action-buttons">
+              <button
+                className="action-btn"
+                onClick={() => openTagModal(account.id)}
+                title={t('accounts.editTags', '编辑标签')}
+              >
+                <Tag size={14} />
+              </button>
+              <button
+                className={`action-btn ${!isCurrent ? 'success' : ''}`}
+                onClick={() => handleSwitch(account.id)}
+                disabled={!!switching}
+                title={t('codex.switch', '切换')}
+              >
+                {switching === account.id ? <RefreshCw size={14} className="loading-spinner" /> : <Play size={14} />}
+              </button>
+              <button
+                className="action-btn"
+                onClick={() => handleRefresh(account.id)}
+                disabled={refreshing === account.id}
+                title={t('codex.refreshQuota', '刷新配额')}
+              >
+                <RotateCw size={14} className={refreshing === account.id ? 'loading-spinner' : ''} />
+              </button>
+              <button
+                className="action-btn danger"
+                onClick={() => handleDelete(account.id)}
+                title={t('common.delete', '删除')}
+              >
+                <Trash2 size={14} />
+              </button>
+            </div>
+          </td>
+        </tr>
+      );
+    });
 
   return (
     <div className="codex-accounts-page">
-      {/* 页面标题 */}
       <div className="page-header">
         <h1>{t('codex.title', 'Codex 账号管理')}</h1>
       </div>
 
-      {/* 消息提示 */}
       {message && (
         <div className={`message-bar ${message.tone === 'error' ? 'error' : 'success'}`}>
           {message.text}
@@ -499,7 +819,6 @@ export function CodexAccountsPage() {
         </div>
       )}
 
-      {/* 工具栏 */}
       <div className="toolbar">
         <div className="toolbar-left">
           <div className="search-box">
@@ -542,6 +861,52 @@ export function CodexAccountsPage() {
               <option value="TEAM">{t('codex.filter.team', { count: tierCounts.TEAM })}</option>
               <option value="ENTERPRISE">{t('codex.filter.enterprise', { count: tierCounts.ENTERPRISE })}</option>
             </select>
+          </div>
+
+          <div className="tag-filter" ref={tagFilterRef}>
+            <button
+              type="button"
+              className={`tag-filter-btn ${tagFilter.length > 0 ? 'active' : ''}`}
+              onClick={() => setShowTagFilter((prev) => !prev)}
+              aria-label={t('accounts.filterTags', '标签筛选')}
+            >
+              <Tag size={14} />
+              {tagFilter.length > 0 ? `${t('accounts.filterTagsCount', '标签')}(${tagFilter.length})` : t('accounts.filterTags', '标签筛选')}
+            </button>
+            {showTagFilter && (
+              <div className="tag-filter-panel">
+                {availableTags.length === 0 ? (
+                  <div className="tag-filter-empty">{t('accounts.noAvailableTags', '暂无可用标签')}</div>
+                ) : (
+                  <div className="tag-filter-options">
+                    {availableTags.map((tag) => (
+                      <label key={tag} className={`tag-filter-option ${tagFilter.includes(tag) ? 'selected' : ''}`}>
+                        <input
+                          type="checkbox"
+                          checked={tagFilter.includes(tag)}
+                          onChange={() => toggleTagFilterValue(tag)}
+                        />
+                        <span>{tag}</span>
+                      </label>
+                    ))}
+                  </div>
+                )}
+                <div className="tag-filter-divider" />
+                <label className="tag-filter-group-toggle">
+                  <input
+                    type="checkbox"
+                    checked={groupByTag}
+                    onChange={(e) => setGroupByTag(e.target.checked)}
+                  />
+                  <span>{t('accounts.groupByTag', '按标签分组展示')}</span>
+                </label>
+                {tagFilter.length > 0 && (
+                  <button type="button" className="tag-filter-clear" onClick={clearTagFilter}>
+                    {t('accounts.clearFilter', '清空筛选')}
+                  </button>
+                )}
+              </div>
+            )}
           </div>
 
           <div className="sort-select">
@@ -621,7 +986,6 @@ export function CodexAccountsPage() {
         </div>
       </div>
 
-      {/* 账号列表 */}
       {loading && accounts.length === 0 ? (
         <div className="loading-container">
           <RefreshCw size={24} className="loading-spinner" />
@@ -643,124 +1007,60 @@ export function CodexAccountsPage() {
           <p>{t('codex.noMatch.desc', '请尝试调整搜索或筛选条件')}</p>
         </div>
       ) : viewMode === 'grid' ? (
-        <div className="codex-accounts-grid">
-          {filteredAccounts.map((account) => {
-            const isCurrent = currentAccount?.id === account.id;
-            const planKey = getCodexPlanDisplayName(account.plan_type);
-            const planLabel = t(`codex.plan.${planKey.toLowerCase()}`, planKey);
-            const isSelected = selected.has(account.id);
-
-            return (
-              <div
-                key={account.id}
-                className={`codex-account-card ${isCurrent ? 'current' : ''} ${isSelected ? 'selected' : ''}`}
-              >
-                {/* 卡片头部 */}
-                <div className="card-top">
-                  <div className="card-select">
-                    <input
-                      type="checkbox"
-                      checked={isSelected}
-                      onChange={() => toggleSelect(account.id)}
-                    />
-                  </div>
-                  <span className="account-email" title={account.email}>
-                    {account.email}
-                  </span>
-                  {isCurrent && <span className="current-tag">{t('codex.current', '当前')}</span>}
-                  <span className={`tier-badge ${planKey.toLowerCase()}`}>{planLabel}</span>
+        groupByTag ? (
+          <div className="tag-group-list">
+            {groupedAccounts.map(([groupKey, groupAccounts]) => (
+              <div key={groupKey} className="tag-group-section">
+                <div className="tag-group-header">
+                  <span className="tag-group-title">{resolveGroupLabel(groupKey)}</span>
+                  <span className="tag-group-count">{groupAccounts.length}</span>
                 </div>
-
-                {/* 配额显示 */}
-                <div className="codex-quota-section">
-                  {/* 5小时配额 */}
-                  <div className="quota-item">
-                    <div className="quota-header">
-                      <Clock size={14} />
-                      <span className="quota-label">{t('codex.quota.hourly', '5小时配额')}</span>
-                      <span className={`quota-pct ${getCodexQuotaClass(account.quota?.hourly_percentage ?? 100)}`}>
-                        {account.quota?.hourly_percentage ?? 100}%
-                      </span>
-                    </div>
-                    <div className="quota-bar-track">
-                      <div
-                        className={`quota-bar ${getCodexQuotaClass(account.quota?.hourly_percentage ?? 100)}`}
-                        style={{ width: `${account.quota?.hourly_percentage ?? 100}%` }}
-                      />
-                    </div>
-                    {account.quota?.hourly_reset_time && (
-                      <span className="quota-reset">
-                        {formatCodexResetTime(account.quota.hourly_reset_time, t)}
-                      </span>
-                    )}
-                  </div>
-
-                  {/* 周配额 */}
-                  <div className="quota-item">
-                    <div className="quota-header">
-                      <Calendar size={14} />
-                      <span className="quota-label">{t('codex.quota.weekly', '周配额')}</span>
-                      <span className={`quota-pct ${getCodexQuotaClass(account.quota?.weekly_percentage ?? 100)}`}>
-                        {account.quota?.weekly_percentage ?? 100}%
-                      </span>
-                    </div>
-                    <div className="quota-bar-track">
-                      <div
-                        className={`quota-bar ${getCodexQuotaClass(account.quota?.weekly_percentage ?? 100)}`}
-                        style={{ width: `${account.quota?.weekly_percentage ?? 100}%` }}
-                      />
-                    </div>
-                    {account.quota?.weekly_reset_time && (
-                      <span className="quota-reset">
-                        {formatCodexResetTime(account.quota.weekly_reset_time, t)}
-                      </span>
-                    )}
-                  </div>
-
-                  {!account.quota && (
-                    <div className="quota-empty">{t('codex.quota.noData', '暂无配额数据')}</div>
-                  )}
-                </div>
-
-                {/* 卡片底部 */}
-                <div className="card-footer">
-                  <span className="card-date">{formatDate(account.created_at)}</span>
-                  <div className="card-actions">
-                    <button
-                      className={`card-action-btn ${!isCurrent ? 'success' : ''}`}
-                      onClick={() => handleSwitch(account.id)}
-                      disabled={!!switching}
-                      title={t('codex.switch', '切换')}
-                    >
-                      {switching === account.id ? (
-                        <RefreshCw size={14} className="loading-spinner" />
-                      ) : (
-                        <Play size={14} />
-                      )}
-                    </button>
-                    <button
-                      className="card-action-btn"
-                      onClick={() => handleRefresh(account.id)}
-                      disabled={refreshing === account.id}
-                      title={t('codex.refreshQuota', '刷新配额')}
-                    >
-                      <RotateCw
-                        size={14}
-                        className={refreshing === account.id ? 'loading-spinner' : ''}
-                      />
-                    </button>
-                    <button
-                      className="card-action-btn danger"
-                      onClick={() => handleDelete(account.id)}
-                      title={t('common.delete', '删除')}
-                    >
-                      <Trash2 size={14} />
-                    </button>
-                  </div>
+                <div className="tag-group-grid codex-accounts-grid">
+                  {renderGridCards(groupAccounts, groupKey)}
                 </div>
               </div>
-            );
-          })}
+            ))}
+          </div>
+        ) : (
+          <div className="codex-accounts-grid">
+            {renderGridCards(filteredAccounts)}
+          </div>
+        )
+      ) : groupByTag ? (
+        <div className="account-table-container grouped">
+          <table className="account-table">
+            <thead>
+              <tr>
+                <th style={{ width: 40 }}>
+                  <input
+                    type="checkbox"
+                    checked={selected.size === filteredAccounts.length && filteredAccounts.length > 0}
+                    onChange={toggleSelectAll}
+                  />
+                </th>
+                <th style={{ width: 260 }}>{t('codex.columns.email', '账号')}</th>
+                <th style={{ width: 140 }}>{t('codex.columns.plan', '订阅')}</th>
+                <th>{t('codex.columns.hourly', '5小时配额')}</th>
+                <th>{t('codex.columns.weekly', '周配额')}</th>
+                <th className="sticky-action-header table-action-header">{t('codex.columns.actions', '操作')}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {groupedAccounts.map(([groupKey, groupAccounts]) => (
+                <Fragment key={groupKey}>
+                  <tr className="tag-group-row">
+                    <td colSpan={6}>
+                      <div className="tag-group-header">
+                        <span className="tag-group-title">{resolveGroupLabel(groupKey)}</span>
+                        <span className="tag-group-count">{groupAccounts.length}</span>
+                      </div>
+                    </td>
+                  </tr>
+                  {renderTableRows(groupAccounts, groupKey)}
+                </Fragment>
+              ))}
+            </tbody>
+          </table>
         </div>
       ) : (
         <div className="account-table-container">
@@ -782,112 +1082,12 @@ export function CodexAccountsPage() {
               </tr>
             </thead>
             <tbody>
-              {filteredAccounts.map((account) => {
-                const isCurrent = currentAccount?.id === account.id;
-                const planKey = getCodexPlanDisplayName(account.plan_type);
-                const planLabel = t(`codex.plan.${planKey.toLowerCase()}`, planKey);
-                return (
-                  <tr key={account.id} className={isCurrent ? 'current' : ''}>
-                    <td>
-                      <input
-                        type="checkbox"
-                        checked={selected.has(account.id)}
-                        onChange={() => toggleSelect(account.id)}
-                      />
-                    </td>
-                    <td>
-                      <div className="account-cell">
-                        <div className="account-main-line">
-                          <span className="account-email-text" title={account.email}>{account.email}</span>
-                          {isCurrent && <span className="mini-tag current">{t('codex.current', '当前')}</span>}
-                        </div>
-                      </div>
-                    </td>
-                    <td>
-                      <span className={`tier-badge ${planKey.toLowerCase()}`}>{planLabel}</span>
-                    </td>
-                    <td>
-                      <div className="quota-item">
-                        <div className="quota-header">
-                          <span className="quota-name">{t('codex.quota.hourly', '5小时配额')}</span>
-                          <span className={`quota-value ${getCodexQuotaClass(account.quota?.hourly_percentage ?? 100)}`}>
-                            {account.quota?.hourly_percentage ?? 100}%
-                          </span>
-                        </div>
-                        <div className="quota-progress-track">
-                          <div
-                            className={`quota-progress-bar ${getCodexQuotaClass(account.quota?.hourly_percentage ?? 100)}`}
-                            style={{ width: `${account.quota?.hourly_percentage ?? 100}%` }}
-                          />
-                        </div>
-                        {account.quota?.hourly_reset_time && (
-                          <div className="quota-footer">
-                            <span className="quota-reset">
-                              {formatCodexResetTime(account.quota.hourly_reset_time, t)}
-                            </span>
-                          </div>
-                        )}
-                      </div>
-                    </td>
-                    <td>
-                      <div className="quota-item">
-                        <div className="quota-header">
-                          <span className="quota-name">{t('codex.quota.weekly', '周配额')}</span>
-                          <span className={`quota-value ${getCodexQuotaClass(account.quota?.weekly_percentage ?? 100)}`}>
-                            {account.quota?.weekly_percentage ?? 100}%
-                          </span>
-                        </div>
-                        <div className="quota-progress-track">
-                          <div
-                            className={`quota-progress-bar ${getCodexQuotaClass(account.quota?.weekly_percentage ?? 100)}`}
-                            style={{ width: `${account.quota?.weekly_percentage ?? 100}%` }}
-                          />
-                        </div>
-                        {account.quota?.weekly_reset_time && (
-                          <div className="quota-footer">
-                            <span className="quota-reset">
-                              {formatCodexResetTime(account.quota.weekly_reset_time, t)}
-                            </span>
-                          </div>
-                        )}
-                      </div>
-                    </td>
-                    <td className="sticky-action-cell table-action-cell">
-                      <div className="action-buttons">
-                        <button
-                          className={`action-btn ${!isCurrent ? 'success' : ''}`}
-                          onClick={() => handleSwitch(account.id)}
-                          disabled={!!switching}
-                          title={t('codex.switch', '切换')}
-                        >
-                          {switching === account.id ? <RefreshCw size={14} className="loading-spinner" /> : <Play size={14} />}
-                        </button>
-                        <button
-                          className="action-btn"
-                          onClick={() => handleRefresh(account.id)}
-                          disabled={refreshing === account.id}
-                          title={t('codex.refreshQuota', '刷新配额')}
-                        >
-                          <RotateCw size={14} className={refreshing === account.id ? 'loading-spinner' : ''} />
-                        </button>
-                        <button
-                          className="action-btn danger"
-                          onClick={() => handleDelete(account.id)}
-                          title={t('common.delete', '删除')}
-                        >
-                          <Trash2 size={14} />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
+              {renderTableRows(filteredAccounts)}
             </tbody>
           </table>
         </div>
       )}
 
-      {/* 添加账号弹窗 */}
       {showAddModal && (
         <div className="modal-overlay" onClick={closeAddModal}>
           <div className="modal-content codex-add-modal" onClick={(e) => e.stopPropagation()}>
@@ -898,39 +1098,48 @@ export function CodexAccountsPage() {
               </button>
             </div>
 
-            {/* Tab 切换 */}
             <div className="modal-tabs">
               <button
                 className={`modal-tab ${addTab === 'oauth' ? 'active' : ''}`}
-                onClick={() => setAddTab('oauth')}
+                onClick={() => openAddModal('oauth')}
               >
-                <Globe size={16} />
-                {t('codex.addModal.oauth', 'OAuth 登录')}
+                <Globe size={14} />
+                OAuth
               </button>
               <button
                 className={`modal-tab ${addTab === 'token' ? 'active' : ''}`}
-                onClick={() => setAddTab('token')}
+                onClick={() => openAddModal('token')}
               >
-                <KeyRound size={16} />
-                {t('codex.addModal.token', 'JSON 导入')}
+                <KeyRound size={14} />
+                Token / JSON
               </button>
               <button
                 className={`modal-tab ${addTab === 'import' ? 'active' : ''}`}
-                onClick={() => setAddTab('import')}
+                onClick={() => openAddModal('import')}
               >
-                <Database size={16} />
-                {t('codex.addModal.local', '本地导入')}
+                <Database size={14} />
+                {t('accounts.tabs.import', '本地导入')}
               </button>
             </div>
 
             <div className="modal-body">
-              {/* OAuth 登录 */}
               {addTab === 'oauth' && (
                 <div className="add-section">
                   <p className="section-desc">
-                    {t('codex.oauth.desc', '点击下方按钮，在浏览器中完成 OpenAI 账号授权')}
+                    {t('codex.oauth.desc', '通过 OpenAI 官方 OAuth 授权登录您的 Codex 账号。')}
                   </p>
-                  {oauthUrl ? (
+
+                  {oauthPrepareError ? (
+                    <div className="add-status error">
+                      <CircleAlert size={16} />
+                      <span>{oauthPrepareError}</span>
+                      {oauthPortInUse && (
+                        <button className="btn btn-sm btn-outline" onClick={handleReleaseOauthPort}>
+                          {t('codex.oauth.releasePort', '释放端口')}
+                        </button>
+                      )}
+                    </div>
+                  ) : oauthUrl ? (
                     <div className="oauth-url-section">
                       <div className="oauth-url-box">
                         <input type="text" value={oauthUrl} readOnly />
@@ -940,84 +1149,58 @@ export function CodexAccountsPage() {
                       </div>
                       <button className="btn btn-primary btn-full" onClick={handleOpenOauthUrl}>
                         <Globe size={16} />
-                        {t('codex.oauth.openBrowser', '在浏览器中打开')}
+                        {t('codex.oauth.openInBrowser', '在浏览器中打开')}
                       </button>
                       <p className="oauth-hint">
-                        {t('codex.oauth.hint', '完成授权后，此窗口将自动更新')}
+                        {t('codex.oauth.waiting', '在浏览器完成登录后，应用会自动捕获授权信息。')}
                       </p>
                     </div>
-                  ) : oauthPrepareError ? (
-                    <>
-                      <div className="add-status error">
-                        <X size={16} />
-                        <span>{oauthPrepareError}</span>
-                      </div>
-                      {oauthPortInUse ? (
-                        <button
-                          className="btn btn-secondary btn-full"
-                          style={{ marginTop: '8px' }}
-                          onClick={handleReleaseOauthPort}
-                        >
-                          {t('codex.oauth.portInUseAction', 'Close port and retry')}
-                        </button>
-                      ) : null}
-                    </>
                   ) : (
                     <div className="oauth-loading">
-                      <RefreshCw size={20} className="loading-spinner" />
+                      <RefreshCw size={24} className="loading-spinner" />
                       <span>{t('codex.oauth.preparing', '正在准备授权链接...')}</span>
                     </div>
                   )}
                 </div>
               )}
 
-              {/* Token 导入 */}
               {addTab === 'token' && (
                 <div className="add-section">
                   <p className="section-desc">
-                    {t('codex.token.desc', '粘贴 auth.json 内容或账号 JSON 数据')}
+                    {t('codex.token.desc', '粘贴您的 Codex Access Token 或导出的 JSON 数据。')}
                   </p>
                   <textarea
                     className="token-input"
                     value={tokenInput}
                     onChange={(e) => setTokenInput(e.target.value)}
-                    placeholder={t('codex.token.placeholder', '粘贴 JSON 内容...')}
-                    rows={8}
+                    placeholder={t('codex.token.placeholder', '粘贴 Token 或 JSON...')}
                   />
                   <button
                     className="btn btn-primary btn-full"
                     onClick={handleTokenImport}
                     disabled={importing || !tokenInput.trim()}
                   >
-                    <Download size={16} />
-                    {t('codex.token.import', '导入')}
+                    {importing ? <RefreshCw size={16} className="loading-spinner" /> : <Download size={16} />}
+                    {t('codex.import.btn', '立即导入')}
                   </button>
                 </div>
               )}
 
-              {/* 本地导入 */}
               {addTab === 'import' && (
                 <div className="add-section">
                   <p className="section-desc">
-                    {t('codex.local.desc', '从 ~/.codex/auth.json 导入当前已登录的账号')}
+                    {t('codex.import.localDesc', '从本地已登录的会话中导入 Codex 账号。')}
                   </p>
-                  <button
-                    className="btn btn-primary btn-full"
-                    onClick={handleImportFromLocal}
-                    disabled={importing}
-                  >
-                    <Database size={16} />
-                    {importing ? t('common.loading', '加载中...') : t('codex.local.import', '获取本地账号')}
+                  <button className="btn btn-primary btn-full" onClick={handleImportFromLocal} disabled={importing}>
+                    {importing ? <RefreshCw size={16} className="loading-spinner" /> : <Database size={16} />}
+                    {t('codex.import.fromLocal', '从本地导入')}
                   </button>
                 </div>
               )}
 
-              {/* 状态消息 */}
-              {addStatus !== 'idle' && (
+              {addStatus !== 'idle' && addStatus !== 'loading' && (
                 <div className={`add-status ${addStatus}`}>
-                  {addStatus === 'loading' && <RefreshCw size={16} className="loading-spinner" />}
-                  {addStatus === 'success' && <Check size={16} />}
-                  {addStatus === 'error' && <X size={16} />}
+                  {addStatus === 'success' ? <Check size={16} /> : <CircleAlert size={16} />}
                   <span>{addMessage}</span>
                 </div>
               )}
@@ -1026,31 +1209,35 @@ export function CodexAccountsPage() {
         </div>
       )}
 
-      {/* 删除确认弹窗 */}
       {deleteConfirm && (
-        <div className="modal-overlay" onClick={() => setDeleteConfirm(null)}>
-          <div className="modal" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-overlay" onClick={() => !deleting && setDeleteConfirm(null)}>
+          <div className="modal-content confirm-modal" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
-              <h2>{t('common.confirm', '确认')}</h2>
-              <button className="modal-close" onClick={() => setDeleteConfirm(null)}>
-                <X size={18} />
-              </button>
+              <h2>{t('common.confirm', '确认操作')}</h2>
             </div>
             <div className="modal-body">
               <p>{deleteConfirm.message}</p>
             </div>
             <div className="modal-footer">
-              <button className="btn btn-secondary" onClick={() => setDeleteConfirm(null)}>
+              <button className="btn btn-secondary" onClick={() => setDeleteConfirm(null)} disabled={deleting}>
                 {t('common.cancel', '取消')}
               </button>
               <button className="btn btn-danger" onClick={confirmDelete} disabled={deleting}>
-                {deleting ? <RefreshCw size={16} className="loading-spinner" /> : null}
+                {deleting ? <RefreshCw size={16} className="loading-spinner" /> : <Trash2 size={16} />}
                 {t('common.delete', '删除')}
               </button>
             </div>
           </div>
         </div>
       )}
+
+      <TagEditModal
+        isOpen={!!showTagModal}
+        initialTags={accounts.find((a) => a.id === showTagModal)?.tags || []}
+        availableTags={availableTags}
+        onClose={() => setShowTagModal(null)}
+        onSave={handleSaveTags}
+      />
     </div>
   );
 }

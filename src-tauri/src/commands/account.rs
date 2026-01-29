@@ -201,6 +201,13 @@ pub async fn bind_account_fingerprint(account_id: String, fingerprint_id: String
 }
 
 #[tauri::command]
+pub async fn update_account_tags(account_id: String, tags: Vec<String>) -> Result<models::Account, String> {
+    let account = modules::update_account_tags(&account_id, tags)?;
+    modules::websocket::broadcast_data_changed("account_tags_updated");
+    Ok(account)
+}
+
+#[tauri::command]
 pub async fn get_bound_accounts(fingerprint_id: String) -> Result<Vec<models::Account>, String> {
     modules::fingerprint::get_bound_accounts(&fingerprint_id)
 }

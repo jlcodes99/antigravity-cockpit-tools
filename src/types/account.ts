@@ -2,6 +2,7 @@ export interface Account {
     id: string;
     email: string;
     name?: string;
+    tags?: string[];
     token: TokenData;
     fingerprint_id?: string;
     quota?: QuotaData;

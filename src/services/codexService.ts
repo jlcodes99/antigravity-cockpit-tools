@@ -88,3 +88,7 @@ export async function isCodexOAuthPortInUse(): Promise<boolean> {
 export async function closeCodexOAuthPort(): Promise<number> {
   return await invoke('close_codex_oauth_port');
 }
+
+export async function updateCodexAccountTags(accountId: string, tags: string[]): Promise<CodexAccount> {
+  return await invoke('update_codex_account_tags', { accountId, tags });
+}

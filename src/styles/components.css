@@ -245,6 +245,8 @@
   box-shadow: var(--shadow-sm);
   backdrop-filter: blur(10px);
   animation: fadeUp 0.55s ease both;
+  position: relative;
+  z-index: 5;
 }
 
 .toolbar-left {
@@ -1086,4 +1088,3 @@
 .toast.info {
   border-left: 4px solid var(--primary);
 }
-

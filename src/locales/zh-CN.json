@@ -175,6 +175,13 @@
       "ascTooltip": "当前：升序，点击切换为降序",
       "toggleDirection": "切换排序方向"
     },
+    "filterTags": "标签筛选",
+    "filterTagsCount": "标签",
+    "noAvailableTags": "暂无可用标签",
+    "clearFilter": "清空筛选",
+    "editTags": "编辑标签",
+    "groupByTag": "按标签分组展示",
+    "untagged": "默认分组",
     "actions": {
       "viewDetails": "查看详情",
       "fingerprint": "指纹",
@@ -671,7 +678,12 @@
       "hourly": "5小时配额",
       "weekly": "周配额",
       "actions": "操作"
-    }
+    },
+    "filterTags": "标签筛选",
+    "filterTagsCount": "标签",
+    "noAvailableTags": "暂无可用标签",
+    "clearFilter": "清空筛选",
+    "editTags": "编辑标签"
   },
   "dashboard": {
     "totalAccounts": "账号总数",

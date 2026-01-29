@@ -175,6 +175,13 @@
       "ascTooltip": "Asc, click to switch to Desc",
       "toggleDirection": "Toggle sort direction"
     },
+    "filterTags": "Filter Tags",
+    "filterTagsCount": "Tags",
+    "noAvailableTags": "No tags available",
+    "clearFilter": "Clear Filter",
+    "editTags": "Edit Tags",
+    "groupByTag": "Group by tags",
+    "untagged": "Untagged",
     "actions": {
       "viewDetails": "View details",
       "fingerprint": "Fingerprint",
@@ -671,7 +678,12 @@
       "hourly": "5-hour quota",
       "weekly": "Weekly quota",
       "actions": "Actions"
-    }
+    },
+    "filterTags": "Filter Tags",
+    "filterTagsCount": "Tags",
+    "noAvailableTags": "No tags available",
+    "clearFilter": "Clear Filter",
+    "editTags": "Edit Tags"
   },
   "dashboard": {
     "title": "Account Dashboard",

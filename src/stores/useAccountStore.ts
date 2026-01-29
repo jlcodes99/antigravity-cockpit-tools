@@ -26,6 +26,7 @@ interface AccountState {
     reorderAccounts: (accountIds: string[]) => Promise<void>;
     switchAccount: (accountId: string) => Promise<Account>;
     syncCurrentFromClient: () => Promise<void>;
+    updateAccountTags: (accountId: string, tags: string[]) => Promise<Account>;
 }
 
 export const useAccountStore = create<AccountState>((set, get) => ({
@@ -143,5 +144,11 @@ export const useAccountStore = create<AccountState>((set, get) => ({
         if (result) {
             await get().fetchCurrentAccount();
         }
+    },
+
+    updateAccountTags: async (accountId: string, tags: string[]) => {
+        const account = await accountService.updateAccountTags(accountId, tags);
+        await get().fetchAccounts();
+        return account;
     },
 }));

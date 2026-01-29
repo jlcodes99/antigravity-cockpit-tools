@@ -97,6 +97,10 @@ export async function switchAccount(accountId: string): Promise<Account> {
     return await invoke('switch_account', { accountId });
 }
 
+export async function updateAccountTags(accountId: string, tags: string[]): Promise<Account> {
+    return await invoke('update_account_tags', { accountId, tags });
+}
+
 export async function syncFromExtension(): Promise<number> {
     return await invoke('sync_from_extension');
 }

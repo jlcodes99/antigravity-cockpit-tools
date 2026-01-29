@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef, Fragment } from 'react';
 import {
   Plus,
   RefreshCw,
@@ -24,6 +24,7 @@ import {
   RotateCw,
   Package,
   ArrowDownWideNarrow,
+  Tag,
 } from 'lucide-react';
 import { useTranslation, Trans } from 'react-i18next';
 import { useAccountStore } from '../stores/useAccountStore';
@@ -35,6 +36,7 @@ import { listen, UnlistenFn } from '@tauri-apps/api/event';
 import { save } from '@tauri-apps/plugin-dialog';
 import { invoke } from '@tauri-apps/api/core';
 import { GroupSettingsModal } from '../components/GroupSettingsModal';
+import { TagEditModal } from '../components/TagEditModal';
 import {
   GroupSettings,
   DisplayGroup,
@@ -54,7 +56,8 @@ type FilterType = 'all' | 'PRO' | 'ULTRA' | 'FREE';
 export function AccountsPage({ onNavigate }: AccountsPageProps) {
   const { t, i18n } = useTranslation();
   const locale = i18n.language || 'zh-CN';
-  const { accounts, currentAccount, loading, fetchAccounts, fetchCurrentAccount, deleteAccounts, refreshQuota, refreshAllQuotas, startOAuthLogin, switchAccount } = useAccountStore();
+  const untaggedKey = '__untagged__';
+  const { accounts, currentAccount, loading, fetchAccounts, fetchCurrentAccount, deleteAccounts, refreshQuota, refreshAllQuotas, startOAuthLogin, switchAccount, updateAccountTags } = useAccountStore();
 
   // 视图模式
   const [viewMode, setViewMode] = useState<ViewMode>('grid');
@@ -62,6 +65,9 @@ export function AccountsPage({ onNavigate }: AccountsPageProps) {
   // 筛选
   const [searchQuery, setSearchQuery] = useState('');
   const [filterType, setFilterType] = useState<FilterType>('all');
+  const [tagFilter, setTagFilter] = useState<string[]>([]);
+  const [groupByTag, setGroupByTag] = useState(false);
+  const [showTagFilter, setShowTagFilter] = useState(false);
 
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [showAddModal, setShowAddModal] = useState(false);
@@ -90,6 +96,9 @@ export function AccountsPage({ onNavigate }: AccountsPageProps) {
 
   // Quota Detail Modal
   const [showQuotaModal, setShowQuotaModal] = useState<string | null>(null);
+
+  // 标签编辑弹窗
+  const [showTagModal, setShowTagModal] = useState<string | null>(null);
   
   // 分组管理
   const [showGroupModal, setShowGroupModal] = useState(false);
@@ -102,6 +111,7 @@ export function AccountsPage({ onNavigate }: AccountsPageProps) {
   const addTabRef = useRef(addTab);
   const oauthUrlRef = useRef(oauthUrl);
   const addStatusRef = useRef(addStatus);
+  const tagFilterRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     showAddModalRef.current = showAddModal;
@@ -161,6 +171,19 @@ export function AccountsPage({ onNavigate }: AccountsPageProps) {
     return groupName || getModelShortName(modelId);
   };
 
+  const normalizeTag = (tag: string) => tag.trim().toLowerCase();
+
+  const availableTags = useMemo(() => {
+    const set = new Set<string>();
+    accounts.forEach((account) => {
+      (account.tags || []).forEach((tag) => {
+        const normalized = normalizeTag(tag);
+        if (normalized) set.add(normalized);
+      });
+    });
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [accounts]);
+
   // 筛选后的账号
   const filteredAccounts = useMemo(() => {
     let result = [...accounts];
@@ -174,6 +197,15 @@ export function AccountsPage({ onNavigate }: AccountsPageProps) {
     // 类型过滤
     if (filterType !== 'all') {
       result = result.filter(acc => getSubscriptionTier(acc.quota) === filterType);
+    }
+
+    // 标签过滤
+    if (tagFilter.length > 0) {
+      const selectedTags = new Set(tagFilter.map(normalizeTag));
+      result = result.filter((acc) => {
+        const tags = (acc.tags || []).map(normalizeTag);
+        return tags.some((tag) => selectedTags.has(tag));
+      });
     }
     
     // 排序逻辑
@@ -241,7 +273,37 @@ export function AccountsPage({ onNavigate }: AccountsPageProps) {
     }
     
     return result;
-  }, [accounts, searchQuery, filterType, currentAccount, sortBy, sortDirection, displayGroups]);
+  }, [accounts, searchQuery, filterType, tagFilter, currentAccount, sortBy, sortDirection, displayGroups]);
+
+  const groupedAccounts = useMemo(() => {
+    if (!groupByTag) return [] as Array<[string, typeof filteredAccounts]>;
+    const groups = new Map<string, typeof filteredAccounts>();
+    const selectedTags = new Set(tagFilter.map(normalizeTag));
+
+    filteredAccounts.forEach((account) => {
+      const tags = (account.tags || []).map(normalizeTag).filter(Boolean);
+      const matchedTags = selectedTags.size > 0
+        ? tags.filter((tag) => selectedTags.has(tag))
+        : tags;
+
+      if (matchedTags.length === 0) {
+        if (!groups.has(untaggedKey)) groups.set(untaggedKey, []);
+        groups.get(untaggedKey)?.push(account);
+        return;
+      }
+
+      matchedTags.forEach((tag) => {
+        if (!groups.has(tag)) groups.set(tag, []);
+        groups.get(tag)?.push(account);
+      });
+    });
+
+    return Array.from(groups.entries()).sort(([aKey], [bKey]) => {
+      if (aKey === untaggedKey) return 1;
+      if (bKey === untaggedKey) return -1;
+      return aKey.localeCompare(bKey);
+    });
+  }, [filteredAccounts, groupByTag, tagFilter, untaggedKey]);
 
   // 统计数量
   const tierCounts = useMemo(() => {
@@ -300,6 +362,18 @@ export function AccountsPage({ onNavigate }: AccountsPageProps) {
       if (unlistenGroups) unlistenGroups();
     };
   }, [fetchAccounts, fetchCurrentAccount, refreshQuota]);
+
+  useEffect(() => {
+    if (!showTagFilter) return;
+    const handleClick = (event: MouseEvent) => {
+      if (!tagFilterRef.current) return;
+      if (!tagFilterRef.current.contains(event.target as Node)) {
+        setShowTagFilter(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, [showTagFilter]);
 
   useEffect(() => {
     let unlistenUrl: UnlistenFn | undefined;
@@ -721,6 +795,27 @@ export function AccountsPage({ onNavigate }: AccountsPageProps) {
     else setSelected(new Set(filteredAccounts.map((a) => a.id)));
   };
 
+  const toggleTagFilterValue = (tag: string) => {
+    setTagFilter((prev) => {
+      if (prev.includes(tag)) return prev.filter((item) => item !== tag);
+      return [...prev, tag];
+    });
+  };
+
+  const clearTagFilter = () => {
+    setTagFilter([]);
+  };
+
+  const openTagModal = (accountId: string) => {
+    setShowTagModal(accountId);
+  };
+
+  const handleSaveTags = async (tags: string[]) => {
+    if (!showTagModal) return;
+    await updateAccountTags(showTagModal, tags);
+    setShowTagModal(null);
+  };
+
   const openFpSelectModal = (accountId: string) => {
     const account = accounts.find(a => a.id === accountId);
     setSelectedFpId(account?.fingerprint_id || 'original');
@@ -800,125 +895,154 @@ export function AccountsPage({ onNavigate }: AccountsPageProps) {
     });
   }, [accounts, refreshWarnings]);
 
-  // 渲染卡片视图
-  const renderGridView = () => (
-    <div className="accounts-grid">
-      {filteredAccounts.map((account) => {
-        const isCurrent = currentAccount?.id === account.id;
-        const tier = getSubscriptionTier(account.quota);
-        const tierLabel = t(`accounts.tier.${tier.toLowerCase()}`, tier);
-        const displayModels = getDisplayModels(account.quota);
-        const isDisabled = account.disabled;
-        const isSelected = selected.has(account.id);
-        const warning = refreshWarnings[account.email];
-        const warningLabel = warning?.kind === 'auth'
-          ? t('accounts.status.authInvalid')
-          : t('accounts.status.refreshFailed');
-        const warningTitle = warning?.message || '';
-        const disabledTitle = isDisabled
-          ? `${t('accounts.status.disabled')}${account.disabled_reason ? `: ${account.disabled_reason}` : ''}`
-          : '';
+  const resolveGroupLabel = (groupKey: string) =>
+    groupKey === untaggedKey ? t('accounts.untagged', '未分组') : groupKey;
 
-        // 调试日志：当没有配额数据时输出详细信息
-        if (displayModels.length === 0) {
-          console.log('[AccountsPage] 账号无配额数据:', {
-            email: account.email,
-            isCurrent,
-            hasQuota: !!account.quota,
-            quotaModels: account.quota?.models,
-            quotaModelsLength: account.quota?.models?.length,
-            rawQuota: account.quota,
-          });
-        }
+  const renderGridCards = (items: Account[], groupKey?: string) =>
+    items.map((account) => {
+      const isCurrent = currentAccount?.id === account.id;
+      const tier = getSubscriptionTier(account.quota);
+      const tierLabel = t(`accounts.tier.${tier.toLowerCase()}`, tier);
+      const displayModels = getDisplayModels(account.quota);
+      const isDisabled = account.disabled;
+      const isSelected = selected.has(account.id);
+      const warning = refreshWarnings[account.email];
+      const warningLabel = warning?.kind === 'auth'
+        ? t('accounts.status.authInvalid')
+        : t('accounts.status.refreshFailed');
+      const warningTitle = warning?.message || '';
+      const disabledTitle = isDisabled
+        ? `${t('accounts.status.disabled')}${account.disabled_reason ? `: ${account.disabled_reason}` : ''}`
+        : '';
 
-        return (
-          <div key={account.id} className={`account-card ${isCurrent ? 'current' : ''} ${isDisabled ? 'disabled' : ''} ${isSelected ? 'selected' : ''}`}>
-            {/* 卡片头部 */}
-              <div className="card-top">
-                <div className="card-select">
-                  <input type="checkbox" checked={isSelected} onChange={() => toggleSelect(account.id)} />
-                </div>
-                <span className="account-email" title={account.email}>{account.email}</span>
-                {isCurrent && <span className="current-tag">{t('accounts.status.current')}</span>}
-                {warning && (
-                  <span className="status-pill warning" title={warningTitle}>
-                    <CircleAlert size={12} />
-                    {warningLabel}
-                  </span>
-                )}
-                {isDisabled && (
-                  <span className="status-pill disabled" title={disabledTitle}>
-                    <CircleAlert size={12} />
-                    {t('accounts.status.disabled')}
-                  </span>
-                )}
-                <span className={`tier-badge ${tier.toLowerCase()}`}>{tierLabel}</span>
-              </div>
+      if (displayModels.length === 0) {
+        console.log('[AccountsPage] 账号无配额数据:', {
+          email: account.email,
+          isCurrent,
+          hasQuota: !!account.quota,
+          quotaModels: account.quota?.models,
+          quotaModelsLength: account.quota?.models?.length,
+          rawQuota: account.quota,
+        });
+      }
 
-            {/* 模型配额 - 两列紧凑布局 */}
-            <div className="card-quota-grid">
-              {displayModels.map((model) => {
-                const resetLabel = formatResetTimeDisplay(model.reset_time, t);
-                return (
-                  <div key={model.name} className="quota-compact-item">
-                    <div className="quota-compact-header">
-                      <span className="model-label">{getModelDisplayLabel(model.name)}</span>
-                      <span className={`model-pct ${getQuotaClass(model.percentage)}`}>{model.percentage}%</span>
-                    </div>
-                    <div className="quota-compact-bar-track">
-                      <div 
-                        className={`quota-compact-bar ${getQuotaClass(model.percentage)}`}
-                        style={{ width: `${model.percentage}%` }}
-                      />
-                    </div>
-                    {resetLabel && <span className="quota-compact-reset">{resetLabel}</span>}
-                  </div>
-                );
-              })}
-              {displayModels.length === 0 && (
-                <div className="quota-empty">{t('overview.noQuotaData')}</div>
-              )}
+      return (
+        <div key={groupKey ? `${groupKey}-${account.id}` : account.id} className={`account-card ${isCurrent ? 'current' : ''} ${isDisabled ? 'disabled' : ''} ${isSelected ? 'selected' : ''}`}>
+          <div className="card-top">
+            <div className="card-select">
+              <input type="checkbox" checked={isSelected} onChange={() => toggleSelect(account.id)} />
             </div>
+            <span className="account-email" title={account.email}>{account.email}</span>
+            {isCurrent && <span className="current-tag">{t('accounts.status.current')}</span>}
+            {warning && (
+              <span className="status-pill warning" title={warningTitle}>
+                <CircleAlert size={12} />
+                {warningLabel}
+              </span>
+            )}
+            {isDisabled && (
+              <span className="status-pill disabled" title={disabledTitle}>
+                <CircleAlert size={12} />
+                {t('accounts.status.disabled')}
+              </span>
+            )}
+            <span className={`tier-badge ${tier.toLowerCase()}`}>{tierLabel}</span>
+          </div>
 
-            {/* 卡片底部 - 日期和操作 */}
-            <div className="card-footer">
-              <span className="card-date">{formatDate(account.created_at)}</span>
-              <div className="card-actions">
-                <button className="card-action-btn" onClick={() => setShowQuotaModal(account.id)} title={t('accounts.actions.viewDetails')}>
-                  <CircleAlert size={14} />
-                </button>
-                <button className="card-action-btn" onClick={() => openFpSelectModal(account.id)} title={t('accounts.actions.fingerprint')}>
-                  <Fingerprint size={14} />
-                </button>
-                <button 
-                  className={`card-action-btn ${!isCurrent ? 'success' : ''}`}
-                  onClick={() => handleSwitch(account.id)} 
-                  disabled={!!switching}
-                  title={isCurrent ? t('accounts.actions.switch') : t('accounts.actions.switchTo')}
-                >
-                  {switching === account.id ? <RefreshCw size={14} className="loading-spinner" /> : <Play size={14} />}
-                </button>
-                <button 
-                  className="card-action-btn" 
-                  onClick={() => handleRefresh(account.id)} 
-                  disabled={refreshing === account.id}
-                  title={t('accounts.refreshQuota')}
-                >
-                  <RotateCw size={14} className={refreshing === account.id ? 'loading-spinner' : ''} />
-                </button>
-                <button className="card-action-btn export-btn" onClick={() => handleExportSingle(account)} title={t('accounts.export')}>
-                  <Upload size={14} />
-                </button>
-                <button className="card-action-btn danger" onClick={() => handleDelete(account.id)} title={t('common.delete')}>
-                  <Trash2 size={14} />
-                </button>
-              </div>
+          <div className="card-quota-grid">
+            {displayModels.map((model) => {
+              const resetLabel = formatResetTimeDisplay(model.reset_time, t);
+              return (
+                <div key={model.name} className="quota-compact-item">
+                  <div className="quota-compact-header">
+                    <span className="model-label">{getModelDisplayLabel(model.name)}</span>
+                    <span className={`model-pct ${getQuotaClass(model.percentage)}`}>{model.percentage}%</span>
+                  </div>
+                  <div className="quota-compact-bar-track">
+                    <div
+                      className={`quota-compact-bar ${getQuotaClass(model.percentage)}`}
+                      style={{ width: `${model.percentage}%` }}
+                    />
+                  </div>
+                  {resetLabel && <span className="quota-compact-reset">{resetLabel}</span>}
+                </div>
+              );
+            })}
+            {displayModels.length === 0 && (
+              <div className="quota-empty">{t('overview.noQuotaData')}</div>
+            )}
+          </div>
+
+          <div className="card-footer">
+            <span className="card-date">{formatDate(account.created_at)}</span>
+            <div className="card-actions">
+              <button className="card-action-btn" onClick={() => setShowQuotaModal(account.id)} title={t('accounts.actions.viewDetails')}>
+                <CircleAlert size={14} />
+              </button>
+              <button className="card-action-btn" onClick={() => openFpSelectModal(account.id)} title={t('accounts.actions.fingerprint')}>
+                <Fingerprint size={14} />
+              </button>
+              <button
+                className="card-action-btn"
+                onClick={() => openTagModal(account.id)}
+                title={t('accounts.editTags', '编辑标签')}
+              >
+                <Tag size={14} />
+              </button>
+              <button
+                className={`card-action-btn ${!isCurrent ? 'success' : ''}`}
+                onClick={() => handleSwitch(account.id)}
+                disabled={!!switching}
+                title={isCurrent ? t('accounts.actions.switch') : t('accounts.actions.switchTo')}
+              >
+                {switching === account.id ? <RefreshCw size={14} className="loading-spinner" /> : <Play size={14} />}
+              </button>
+              <button
+                className="card-action-btn"
+                onClick={() => handleRefresh(account.id)}
+                disabled={refreshing === account.id}
+                title={t('accounts.refreshQuota')}
+              >
+                <RotateCw size={14} className={refreshing === account.id ? 'loading-spinner' : ''} />
+              </button>
+              <button className="card-action-btn export-btn" onClick={() => handleExportSingle(account)} title={t('accounts.export')}>
+                <Upload size={14} />
+              </button>
+              <button className="card-action-btn danger" onClick={() => handleDelete(account.id)} title={t('common.delete')}>
+                <Trash2 size={14} />
+              </button>
             </div>
           </div>
-        );
-      })}
-    </div>
-  );
+        </div>
+      );
+    });
+
+  // 渲染卡片视图
+  const renderGridView = () => {
+    if (!groupByTag) {
+      return (
+        <div className="accounts-grid">
+          {renderGridCards(filteredAccounts)}
+        </div>
+      );
+    }
+
+    return (
+      <div className="tag-group-list">
+        {groupedAccounts.map(([groupKey, groupAccounts]) => (
+          <div key={groupKey} className="tag-group-section">
+            <div className="tag-group-header">
+              <span className="tag-group-title">{resolveGroupLabel(groupKey)}</span>
+              <span className="tag-group-count">{groupAccounts.length}</span>
+            </div>
+            <div className="tag-group-grid accounts-grid">
+              {renderGridCards(groupAccounts, groupKey)}
+            </div>
+          </div>
+        ))}
+      </div>
+    );
+  };
 
   const handleExportSingle = async (account: Account) => {
     try {
@@ -931,17 +1055,129 @@ export function AccountsPage({ onNavigate }: AccountsPageProps) {
     } catch (e) { alert(t('messages.exportFailed', { error: String(e) })); }
   };
 
+  const renderListRows = (items: Account[], groupKey?: string) =>
+    items.map((account) => {
+      const isCurrent = currentAccount?.id === account.id;
+      const tier = getSubscriptionTier(account.quota);
+      const tierLabel = t(`accounts.tier.${tier.toLowerCase()}`, tier);
+      const displayModels = getDisplayModels(account.quota);
+      const warning = refreshWarnings[account.email];
+      const warningLabel = warning?.kind === 'auth'
+        ? t('accounts.status.authInvalid')
+        : t('accounts.status.refreshFailed');
+      const warningTitle = warning?.message || '';
+      const disabledTitle = account.disabled
+        ? `${t('accounts.status.disabled')}${account.disabled_reason ? `: ${account.disabled_reason}` : ''}`
+        : '';
+
+      return (
+        <tr key={groupKey ? `${groupKey}-${account.id}` : account.id} className={isCurrent ? 'current' : ''}>
+          <td>
+            <input
+              type="checkbox"
+              checked={selected.has(account.id)}
+              onChange={() => toggleSelect(account.id)}
+            />
+          </td>
+          <td>
+            <div className="account-cell">
+              <div className="account-main-line">
+                <span className="account-email-text" title={account.email}>{account.email}</span>
+                {isCurrent && <span className="mini-tag current">{t('accounts.status.current')}</span>}
+              </div>
+              <div className="account-sub-line">
+                <span className={`tier-badge ${tier.toLowerCase()}`}>{tierLabel}</span>
+                {warning && (
+                  <span className="status-pill warning" title={warningTitle}>
+                    <CircleAlert size={12} />
+                    {warningLabel}
+                  </span>
+                )}
+                {account.disabled && (
+                  <span className="status-pill disabled" title={disabledTitle}>
+                    <CircleAlert size={12} />
+                    {t('accounts.status.disabled')}
+                  </span>
+                )}
+              </div>
+            </div>
+          </td>
+          <td>
+            <button className="fp-select-btn" onClick={() => openFpSelectModal(account.id)} title={t('accounts.actions.selectFingerprint')}>
+              <Fingerprint size={14} />
+              <span className="fp-select-name">{getFingerprintName(account.fingerprint_id)}</span>
+              <Link size={12} />
+            </button>
+          </td>
+          <td>
+            <div className="quota-grid">
+              {displayModels.map((model) => (
+                <div className="quota-item" key={model.name}>
+                  <div className="quota-header">
+                    <span className="quota-name">{getModelDisplayLabel(model.name)}</span>
+                    <span className={`quota-value ${getQuotaClass(model.percentage)}`}>{model.percentage}%</span>
+                  </div>
+                  <div className="quota-progress-track">
+                    <div
+                      className={`quota-progress-bar ${getQuotaClass(model.percentage)}`}
+                      style={{ width: `${model.percentage}%` }}
+                    />
+                  </div>
+                  <div className="quota-footer">
+                    <span className="quota-reset">{formatResetTimeDisplay(model.reset_time, t)}</span>
+                  </div>
+                </div>
+              ))}
+              {displayModels.length === 0 && (
+                <span style={{ color: 'var(--text-muted)', fontSize: 13 }}>
+                  {t('overview.noQuotaData')}
+                </span>
+              )}
+            </div>
+          </td>
+          <td className="sticky-action-cell table-action-cell">
+            <div className="action-buttons">
+              <button className="action-btn" onClick={() => setShowQuotaModal(account.id)} title={t('accounts.actions.viewDetails')}>
+                <CircleAlert size={16} />
+              </button>
+              <button
+                className="action-btn"
+                onClick={() => openTagModal(account.id)}
+                title={t('accounts.editTags', '编辑标签')}
+              >
+                <Tag size={16} />
+              </button>
+              <button
+                className={`action-btn ${!isCurrent ? 'success' : ''}`}
+                onClick={() => handleSwitch(account.id)}
+                disabled={!!switching}
+                title={isCurrent ? t('accounts.actions.switch') : t('accounts.actions.switchTo')}
+              >
+                {switching === account.id ? <div className="loading-spinner" style={{ width: 14, height: 14 }} /> : <Play size={16} />}
+              </button>
+              <button className="action-btn" onClick={() => handleRefresh(account.id)} disabled={refreshing === account.id} title={t('accounts.refreshQuota')}>
+                <RotateCw size={16} className={refreshing === account.id ? 'loading-spinner' : ''} />
+              </button>
+              <button className="action-btn danger" onClick={() => handleDelete(account.id)} title={t('common.delete')}>
+                <Trash2 size={16} />
+              </button>
+            </div>
+          </td>
+        </tr>
+      );
+    });
+
   // 渲染列表视图
   const renderListView = () => (
-    <div className="account-table-container">
+    <div className={`account-table-container${groupByTag ? ' grouped' : ''}`}>
       <table className="account-table">
         <thead>
           <tr>
             <th style={{ width: 40 }}>
-              <input 
-                type="checkbox" 
-                checked={selected.size === filteredAccounts.length && filteredAccounts.length > 0} 
-                onChange={toggleSelectAll} 
+              <input
+                type="checkbox"
+                checked={selected.size === filteredAccounts.length && filteredAccounts.length > 0}
+                onChange={toggleSelectAll}
               />
             </th>
             <th style={{ width: 220 }}>{t('accounts.columns.email')}</th>
@@ -951,109 +1187,21 @@ export function AccountsPage({ onNavigate }: AccountsPageProps) {
           </tr>
         </thead>
         <tbody>
-          {filteredAccounts.map((account) => {
-            const isCurrent = currentAccount?.id === account.id;
-            const tier = getSubscriptionTier(account.quota);
-            const tierLabel = t(`accounts.tier.${tier.toLowerCase()}`, tier);
-            const displayModels = getDisplayModels(account.quota);
-            const warning = refreshWarnings[account.email];
-            const warningLabel = warning?.kind === 'auth'
-              ? t('accounts.status.authInvalid')
-              : t('accounts.status.refreshFailed');
-            const warningTitle = warning?.message || '';
-            const disabledTitle = account.disabled
-              ? `${t('accounts.status.disabled')}${account.disabled_reason ? `: ${account.disabled_reason}` : ''}`
-              : '';
-
-            return (
-              <tr key={account.id} className={isCurrent ? 'current' : ''}>
-                <td>
-                  <input 
-                    type="checkbox" 
-                    checked={selected.has(account.id)} 
-                    onChange={() => toggleSelect(account.id)} 
-                  />
-                </td>
-                <td>
-                  <div className="account-cell">
-                    <div className="account-main-line">
-                      <span className="account-email-text" title={account.email}>{account.email}</span>
-                      {isCurrent && <span className="mini-tag current">{t('accounts.status.current')}</span>}
-                    </div>
-                    <div className="account-sub-line">
-                      <span className={`tier-badge ${tier.toLowerCase()}`}>{tierLabel}</span>
-                      {warning && (
-                        <span className="status-pill warning" title={warningTitle}>
-                          <CircleAlert size={12} />
-                          {warningLabel}
-                        </span>
-                      )}
-                      {account.disabled && (
-                        <span className="status-pill disabled" title={disabledTitle}>
-                          <CircleAlert size={12} />
-                          {t('accounts.status.disabled')}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                </td>
-                <td>
-                  <button className="fp-select-btn" onClick={() => openFpSelectModal(account.id)} title={t('accounts.actions.selectFingerprint')}>
-                    <Fingerprint size={14} />
-                    <span className="fp-select-name">{getFingerprintName(account.fingerprint_id)}</span>
-                    <Link size={12} />
-                  </button>
-                </td>
-                <td>
-                  <div className="quota-grid">
-                    {displayModels.map((model) => (
-                      <div className="quota-item" key={model.name}>
-                        <div className="quota-header">
-                          <span className="quota-name">{getModelDisplayLabel(model.name)}</span>
-                          <span className={`quota-value ${getQuotaClass(model.percentage)}`}>{model.percentage}%</span>
-                        </div>
-                        <div className="quota-progress-track">
-                          <div 
-                            className={`quota-progress-bar ${getQuotaClass(model.percentage)}`} 
-                            style={{ width: `${model.percentage}%` }}
-                          />
-                        </div>
-                        <div className="quota-footer">
-                          <span className="quota-reset">{formatResetTimeDisplay(model.reset_time, t)}</span>
-                        </div>
+          {groupByTag
+            ? groupedAccounts.map(([groupKey, groupAccounts]) => (
+                <Fragment key={groupKey}>
+                  <tr className="tag-group-row">
+                    <td colSpan={5}>
+                      <div className="tag-group-header">
+                        <span className="tag-group-title">{resolveGroupLabel(groupKey)}</span>
+                        <span className="tag-group-count">{groupAccounts.length}</span>
                       </div>
-                    ))}
-                    {displayModels.length === 0 && (
-                      <span style={{ color: 'var(--text-muted)', fontSize: 13 }}>
-                        {t('overview.noQuotaData')}
-                      </span>
-                    )}
-                  </div>
-                </td>
-                <td className="sticky-action-cell table-action-cell">
-                  <div className="action-buttons">
-                    <button className="action-btn" onClick={() => setShowQuotaModal(account.id)} title={t('accounts.actions.viewDetails')}>
-                      <CircleAlert size={16} />
-                    </button>
-                    <button 
-                      className={`action-btn ${!isCurrent ? 'success' : ''}`} 
-                      onClick={() => handleSwitch(account.id)} 
-                      disabled={!!switching} 
-                      title={isCurrent ? t('accounts.actions.switch') : t('accounts.actions.switchTo')}
-                    >
-                      {switching === account.id ? <div className="loading-spinner" style={{ width: 14, height: 14 }} /> : <Play size={16} />}
-                    </button>
-                    <button className="action-btn" onClick={() => handleRefresh(account.id)} disabled={refreshing === account.id} title={t('accounts.refreshQuota')}>
-                      <RotateCw size={16} className={refreshing === account.id ? 'loading-spinner' : ''} />
-                    </button>
-                    <button className="action-btn danger" onClick={() => handleDelete(account.id)} title={t('common.delete')}>
-                      <Trash2 size={16} />
-                    </button>
-                  </div>
-                </td>
-              </tr>
-            );
-          })}
+                    </td>
+                  </tr>
+                  {renderListRows(groupAccounts, groupKey)}
+                </Fragment>
+              ))
+            : renderListRows(filteredAccounts)}
         </tbody>
       </table>
     </div>
@@ -1130,6 +1278,52 @@ export function AccountsPage({ onNavigate }: AccountsPageProps) {
                 <option value="ULTRA">{t('accounts.filter.ultra', { count: tierCounts.ULTRA })}</option>
                 <option value="FREE">{t('accounts.filter.free', { count: tierCounts.FREE })}</option>
               </select>
+            </div>
+
+            <div className="tag-filter" ref={tagFilterRef}>
+              <button
+                type="button"
+                className={`tag-filter-btn ${tagFilter.length > 0 ? 'active' : ''}`}
+                onClick={() => setShowTagFilter((prev) => !prev)}
+                aria-label={t('accounts.filterTags', '标签筛选')}
+              >
+                <Tag size={14} />
+                {tagFilter.length > 0 ? `${t('accounts.filterTagsCount', '标签')}(${tagFilter.length})` : t('accounts.filterTags', '标签筛选')}
+              </button>
+              {showTagFilter && (
+                <div className="tag-filter-panel">
+                  {availableTags.length === 0 ? (
+                    <div className="tag-filter-empty">{t('accounts.noAvailableTags', '暂无可用标签')}</div>
+                  ) : (
+                    <div className="tag-filter-options">
+                      {availableTags.map((tag) => (
+                        <label key={tag} className={`tag-filter-option ${tagFilter.includes(tag) ? 'selected' : ''}`}>
+                          <input
+                            type="checkbox"
+                            checked={tagFilter.includes(tag)}
+                            onChange={() => toggleTagFilterValue(tag)}
+                          />
+                          <span>{tag}</span>
+                        </label>
+                      ))}
+                    </div>
+                  )}
+                  <div className="tag-filter-divider" />
+                  <label className="tag-filter-group-toggle">
+                    <input
+                      type="checkbox"
+                      checked={groupByTag}
+                      onChange={(e) => setGroupByTag(e.target.checked)}
+                    />
+                    <span>{t('accounts.groupByTag', '按标签分组展示')}</span>
+                  </label>
+                  {tagFilter.length > 0 && (
+                    <button type="button" className="tag-filter-clear" onClick={clearTagFilter}>
+                      {t('accounts.clearFilter', '清空筛选')}
+                    </button>
+                  )}
+                </div>
+              )}
             </div>
             
             {/* 排序下拉菜单 */}
@@ -1519,6 +1713,15 @@ export function AccountsPage({ onNavigate }: AccountsPageProps) {
         );
       })()}
       
+      {/* 标签编辑弹窗 */}
+      <TagEditModal
+        isOpen={!!showTagModal}
+        initialTags={accounts.find((acc) => acc.id === showTagModal)?.tags || []}
+        availableTags={availableTags}
+        onClose={() => setShowTagModal(null)}
+        onSave={handleSaveTags}
+      />
+
       {/* 分组管理弹窗 */}
       <GroupSettingsModal
         isOpen={showGroupModal}

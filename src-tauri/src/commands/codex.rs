@@ -163,6 +163,11 @@ pub async fn add_codex_account_with_token(id_token: String, access_token: String
 
 /// 检查 Codex OAuth 端口是否被占用
 #[tauri::command]
+pub async fn update_codex_account_tags(account_id: String, tags: Vec<String>) -> Result<CodexAccount, String> {
+    codex_account::update_account_tags(&account_id, tags)
+}
+
+#[tauri::command]
 pub fn is_codex_oauth_port_in_use() -> Result<bool, String> {
     let port = codex_oauth::get_callback_port();
     process::is_port_in_use(port)

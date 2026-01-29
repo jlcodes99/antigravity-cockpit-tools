@@ -7,6 +7,7 @@ export interface CodexAccount {
   account_id?: string;
   tokens: CodexTokens;
   quota?: CodexQuota;
+  tags?: string[];
   created_at: number;
   last_used: number;
 }

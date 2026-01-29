@@ -10,6 +10,7 @@ pub struct CodexAccount {
     pub account_id: Option<String>,
     pub tokens: CodexTokens,
     pub quota: Option<CodexQuota>,
+    pub tags: Option<Vec<String>>,
     pub created_at: i64,
     pub last_used: i64,
 }
@@ -43,10 +44,10 @@ pub struct CodexQuota {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CodexAuthFile {
     #[serde(rename = "OPENAI_API_KEY")]
-    pub openai_api_key: Option<serde_json::Value>,  // 可以是 null 或字符串
+    pub openai_api_key: Option<serde_json::Value>, // 可以是 null 或字符串
     pub tokens: CodexAuthTokens,
     #[serde(default)]
-    pub last_refresh: Option<serde_json::Value>,  // 可以是字符串或数字
+    pub last_refresh: Option<serde_json::Value>, // 可以是字符串或数字
 }
 
 /// auth.json 中的 tokens 字段
@@ -117,12 +118,6 @@ pub struct CodexAuthData {
     pub organization_id: Option<String>,
 }
 
-/// 账号配额响应（来自 /accounts/check/v4）
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CodexQuotaResponse {
-    pub accounts: Option<serde_json::Value>,
-}
-
 impl CodexAccount {
     pub fn new(id: String, email: String, tokens: CodexTokens) -> Self {
         let now = chrono::Utc::now().timestamp();
@@ -134,6 +129,7 @@ impl CodexAccount {
             account_id: None,
             tokens,
             quota: None,
+            tags: None,
             created_at: now,
             last_used: now,
         }
