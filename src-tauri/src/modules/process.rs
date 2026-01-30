@@ -323,6 +323,7 @@ pub fn is_opencode_running() -> bool {
 
     let current_pid = std::process::id();
     let app_lower = OPENCODE_APP_NAME.to_lowercase();
+    let bundle_lower = format!("{}.app", app_lower);
 
     for (pid, process) in system.processes() {
         let pid_u32 = pid.as_u32();
@@ -357,7 +358,6 @@ pub fn is_opencode_running() -> bool {
 
         #[cfg(target_os = "macos")]
         {
-            let bundle_lower = format!("{}.app", app_lower);
             if exe_path.contains(&bundle_lower) && !is_helper {
                 return true;
             }
@@ -393,6 +393,7 @@ fn get_opencode_pids() -> Vec<u32> {
     let mut pids = Vec::new();
     let current_pid = std::process::id();
     let app_lower = OPENCODE_APP_NAME.to_lowercase();
+    let bundle_lower = format!("{}.app", app_lower);
 
     for (pid, process) in system.processes() {
         let pid_u32 = pid.as_u32();
@@ -427,7 +428,6 @@ fn get_opencode_pids() -> Vec<u32> {
 
         #[cfg(target_os = "macos")]
         {
-            let bundle_lower = format!("{}.app", app_lower);
             if exe_path.contains(&bundle_lower) && !is_helper {
                 pids.push(pid_u32);
             }
@@ -560,8 +560,9 @@ pub fn start_opencode_with_path(custom_path: Option<&str>) -> Result<(), String>
             candidates.push(custom);
         }
 
-        if let Ok(local_appdata) = std::env::var("LOCALAPPDATA") {
-            candidates.push(format!("{}/Programs/OpenCode/OpenCode.exe", local_appdata));
+        let default_path = get_default_opencode_app_path();
+        if !default_path.is_empty() {
+            candidates.push(default_path);
         }
 
         if let Ok(program_files) = std::env::var("PROGRAMFILES") {
