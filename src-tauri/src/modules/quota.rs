@@ -1,6 +1,11 @@
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use crate::models::QuotaData;
+use crate::modules;
+use chrono::Utc;
+use sha2::{Digest, Sha256};
+use std::fs;
+use std::path::PathBuf;
 
 const QUOTA_API_URL: &str = "https://cloudcode-pa.googleapis.com/v1internal:fetchAvailableModels";
 const CLOUD_CODE_BASE_URLS: [&str; 3] = [
@@ -14,6 +19,9 @@ const BACKOFF_BASE_MS: u64 = 500;
 const BACKOFF_MAX_MS: u64 = 4000;
 const ONBOARD_ATTEMPTS: usize = 5;
 const ONBOARD_DELAY_MS: u64 = 2000;
+const API_CACHE_DIR: &str = "cache/quota_api_v1";
+const API_CACHE_VERSION: u8 = 1;
+const API_CACHE_TTL_MS: i64 = 60_000;
 
 fn truncate_log_text(text: &str, max_len: usize) -> String {
     if text.chars().count() <= max_len {
@@ -30,6 +38,74 @@ fn header_value(headers: &reqwest::header::HeaderMap, name: reqwest::header::Hea
         .and_then(|value| value.to_str().ok())
         .unwrap_or("-")
         .to_string()
+}
+
+fn hash_email(email: &str) -> String {
+    let normalized = email.trim().to_lowercase();
+    let mut hasher = Sha256::new();
+    hasher.update(normalized.as_bytes());
+    format!("{:x}", hasher.finalize())
+}
+
+fn api_cache_path(source: &str, email: &str) -> Result<PathBuf, String> {
+    let data_dir = modules::account::get_data_dir()?;
+    let dir = data_dir.join(API_CACHE_DIR).join(source);
+    if !dir.exists() {
+        fs::create_dir_all(&dir).map_err(|e| format!("Failed to create quota api cache dir: {}", e))?;
+    }
+    Ok(dir.join(format!("{}.json", hash_email(email))))
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct QuotaApiCacheRecord {
+    version: u8,
+    source: String,
+    custom_source: String,
+    email: String,
+    project_id: Option<String>,
+    updated_at: i64,
+    payload: serde_json::Value,
+}
+
+fn read_api_cache(source: &str, email: &str) -> Option<QuotaApiCacheRecord> {
+    let path = api_cache_path(source, email).ok()?;
+    let content = fs::read_to_string(path).ok()?;
+    let record = serde_json::from_str::<QuotaApiCacheRecord>(&content).ok()?;
+    if record.version != API_CACHE_VERSION {
+        return None;
+    }
+    if record.source != source {
+        return None;
+    }
+    Some(record)
+}
+
+fn is_api_cache_valid(record: &QuotaApiCacheRecord) -> bool {
+    let now_ms = Utc::now().timestamp_millis();
+    now_ms - record.updated_at < API_CACHE_TTL_MS
+}
+
+fn api_cache_age_secs(record: &QuotaApiCacheRecord) -> i64 {
+    let now_ms = Utc::now().timestamp_millis();
+    std::cmp::max(0, (now_ms - record.updated_at) / 1000)
+}
+
+fn write_api_cache(source: &str, custom_source: &str, email: &str, project_id: Option<String>, payload: serde_json::Value) {
+    if let Ok(path) = api_cache_path(source, email) {
+        let record = QuotaApiCacheRecord {
+            version: API_CACHE_VERSION,
+            source: source.to_string(),
+            custom_source: custom_source.to_string(),
+            email: email.to_string(),
+            project_id,
+            updated_at: Utc::now().timestamp_millis(),
+            payload,
+        };
+        if let Ok(content) = serde_json::to_string_pretty(&record) {
+            let _ = fs::write(path, content);
+        }
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -347,6 +423,38 @@ pub async fn fetch_quota(access_token: &str, email: &str) -> crate::error::AppRe
     use crate::error::AppError;
     
     let (project_id, subscription_tier) = fetch_project_id(access_token, email).await;
+
+    if let Some(record) = read_api_cache("authorized", email) {
+        if is_api_cache_valid(&record) {
+            crate::modules::logger::log_info(&format!(
+                "[QuotaApiCache] Using api cache for {} (age: {}s)",
+                email,
+                api_cache_age_secs(&record),
+            ));
+            if let Ok(quota_response) = serde_json::from_value::<QuotaResponse>(record.payload.clone()) {
+                let mut quota_data = QuotaData::new();
+                for (name, info) in quota_response.models {
+                    if let Some(quota_info) = info.quota_info {
+                        let percentage = quota_info.remaining_fraction
+                            .map(|f| (f * 100.0) as i32)
+                            .unwrap_or(0);
+                        let reset_time = quota_info.reset_time.unwrap_or_default();
+                        if name.contains("gemini") || name.contains("claude") {
+                            quota_data.add_model(name, percentage, reset_time);
+                        }
+                    }
+                }
+                quota_data.subscription_tier = subscription_tier.clone();
+                return Ok((quota_data, project_id.clone()));
+            }
+        } else {
+            crate::modules::logger::log_info(&format!(
+                "[QuotaApiCache] Cache expired for {} (age: {}s), fetching from network",
+                email,
+                api_cache_age_secs(&record),
+            ));
+        }
+    }
     
     let client = create_client();
     let payload = project_id
@@ -389,10 +497,15 @@ pub async fn fetch_quota(access_token: &str, email: &str) -> crate::error::AppRe
                     }
                 }
 
-                let quota_response: QuotaResponse = response
-                    .json()
+                let body = response
+                    .text()
                     .await
                     .map_err(|e| AppError::Network(e))?;
+                let payload_value: serde_json::Value = serde_json::from_str(&body)
+                    .map_err(|e| AppError::Unknown(format!("API 响应解析失败: {}", e)))?;
+                write_api_cache("authorized", "desktop", email, project_id.clone(), payload_value.clone());
+                let quota_response: QuotaResponse = serde_json::from_value(payload_value)
+                    .map_err(|e| AppError::Unknown(format!("API 响应解析失败: {}", e)))?;
                 
                 let mut quota_data = QuotaData::new();
 

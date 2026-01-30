@@ -7,6 +7,16 @@ All notable changes to Cockpit Tools will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
+## [0.4.7] - 2026-01-30
+
+### Added
+- **Authorized API cache**: Cache raw authorized API responses in `cache/quota_api_v1`.
+- **Cache source marker**: Store `customSource` in API cache records to identify the writer.
+- **Cache hit logging**: Log API cache hits/expiry during quota refresh.
+
+### Changed
+- **Legacy cache reader**: Reads the new API cache payload to preserve fast startup behavior.
+
 ## [0.4.6] - 2026-01-29
 
 ### Added

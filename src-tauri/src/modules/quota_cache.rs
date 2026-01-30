@@ -2,38 +2,44 @@ use std::fs;
 use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
+use serde_json::Value as JsonValue;
 use sha2::{Digest, Sha256};
 
 use crate::models::{Account, QuotaData};
 use crate::modules;
 
-const CACHE_DIR: &str = "cache/quota";
+const CACHE_DIR: &str = "cache/quota_api_v1";
 const CACHE_VERSION: u8 = 1;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct QuotaCacheModel {
-    id: String,
-    display_name: Option<String>,
-    remaining_percentage: Option<i32>,
-    remaining_fraction: Option<f64>,
-    reset_time: Option<String>,
-    is_recommended: Option<bool>,
-    tag_title: Option<String>,
-    supports_images: Option<bool>,
-    supported_mime_types: Option<std::collections::HashMap<String, bool>>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub(crate) struct QuotaCacheRecord {
+pub(crate) struct QuotaApiCacheRecord {
     version: u8,
     source: String,
-    email: Option<String>,
+    custom_source: Option<String>,
+    email: String,
+    project_id: Option<String>,
     updated_at: i64,
-    subscription_tier: Option<String>,
-    is_forbidden: Option<bool>,
-    models: Vec<QuotaCacheModel>,
+    payload: JsonValue,
+}
+
+#[derive(Debug, Deserialize)]
+struct QuotaResponse {
+    models: std::collections::HashMap<String, ModelInfo>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ModelInfo {
+    #[serde(rename = "quotaInfo")]
+    quota_info: Option<QuotaInfo>,
+}
+
+#[derive(Debug, Deserialize)]
+struct QuotaInfo {
+    #[serde(rename = "remainingFraction")]
+    remaining_fraction: Option<f64>,
+    #[serde(rename = "resetTime")]
+    reset_time: Option<String>,
 }
 
 fn hash_email(email: &str) -> String {
@@ -57,10 +63,10 @@ fn cache_path(source: &str, email: &str) -> Result<PathBuf, String> {
     Ok(dir.join(format!("{}.json", hash_email(email))))
 }
 
-pub(crate) fn read_quota_cache(source: &str, email: &str) -> Option<QuotaCacheRecord> {
+pub(crate) fn read_quota_cache(source: &str, email: &str) -> Option<QuotaApiCacheRecord> {
     let path = cache_path(source, email).ok()?;
     let content = fs::read_to_string(path).ok()?;
-    let record = serde_json::from_str::<QuotaCacheRecord>(&content).ok()?;
+    let record = serde_json::from_str::<QuotaApiCacheRecord>(&content).ok()?;
     if record.version != CACHE_VERSION {
         return None;
     }
@@ -71,47 +77,9 @@ pub(crate) fn read_quota_cache(source: &str, email: &str) -> Option<QuotaCacheRe
 }
 
 pub fn write_quota_cache(source: &str, email: &str, quota: &QuotaData) -> Result<(), String> {
-    // 容错：如果 models 为空，不写入缓存，避免覆盖已有的有效缓存
-    if quota.models.is_empty() {
-        return Ok(());
-    }
-    
-    let path = cache_path(source, email)?;
-    let temp_path = path.with_extension("json.tmp");
-    let updated_at = chrono::Utc::now().timestamp_millis();
-
-    let models = quota
-        .models
-        .iter()
-        .map(|model| QuotaCacheModel {
-            id: model.name.clone(),
-            display_name: None,
-            remaining_percentage: Some(model.percentage),
-            remaining_fraction: Some(model.percentage as f64 / 100.0),
-            reset_time: Some(model.reset_time.clone()),
-            is_recommended: None,
-            tag_title: None,
-            supports_images: None,
-            supported_mime_types: None,
-        })
-        .collect::<Vec<_>>();
-
-    let record = QuotaCacheRecord {
-        version: CACHE_VERSION,
-        source: source.to_string(),
-        email: Some(email.to_string()),
-        updated_at,
-        subscription_tier: quota.subscription_tier.clone(),
-        is_forbidden: Some(quota.is_forbidden),
-        models,
-    };
-
-    let content = serde_json::to_string_pretty(&record)
-        .map_err(|e| format!("Failed to serialize quota cache: {}", e))?;
-    fs::write(&temp_path, content)
-        .map_err(|e| format!("Failed to write quota cache: {}", e))?;
-    fs::rename(temp_path, path)
-        .map_err(|e| format!("Failed to save quota cache: {}", e))?;
+    let _ = source;
+    let _ = email;
+    let _ = quota;
     Ok(())
 }
 
@@ -134,20 +102,20 @@ pub fn apply_cached_quota(account: &mut Account, source: &str) -> Result<bool, S
 
     let mut quota = QuotaData::new();
     quota.last_updated = cache_updated;
-    quota.subscription_tier = record.subscription_tier.clone();
-    quota.is_forbidden = record.is_forbidden.unwrap_or(false);
+    quota.subscription_tier = account.quota.as_ref().and_then(|q| q.subscription_tier.clone());
+    quota.is_forbidden = account.quota.as_ref().map(|q| q.is_forbidden).unwrap_or(false);
 
-    for model in record.models {
-        let name = model.id;
-        let percentage = model.remaining_percentage.unwrap_or_else(|| {
-            model.remaining_fraction
-                .map(|value| (value * 100.0).round() as i32)
-                .unwrap_or(0)
-        });
-        let reset_time = model.reset_time.unwrap_or_default();
-
-        if name.contains("gemini") || name.contains("claude") {
-            quota.add_model(name, percentage, reset_time);
+    let parsed = serde_json::from_value::<QuotaResponse>(record.payload.clone())
+        .map_err(|e| format!("Failed to parse api cache payload: {}", e))?;
+    for (name, info) in parsed.models {
+        if let Some(quota_info) = info.quota_info {
+            let percentage = quota_info.remaining_fraction
+                .map(|f| (f * 100.0) as i32)
+                .unwrap_or(0);
+            let reset_time = quota_info.reset_time.unwrap_or_default();
+            if name.contains("gemini") || name.contains("claude") {
+                quota.add_model(name, percentage, reset_time);
+            }
         }
     }
 
